@@ -11,6 +11,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo [.opencode] Installing/updating OpenCode globally...
+call npm install -g opencode-ai
+if errorlevel 1 goto :fail
+
 echo [.opencode] Installing root dependencies...
 pushd "%SCRIPT_DIR%" >nul
 call npm ci
@@ -27,8 +31,6 @@ if errorlevel 1 goto :fail
 
 echo [.opencode] Linking smart-explore-mcp command globally...
 pushd "%SCRIPT_DIR%mcp\smart-explore" >nul
-call pnpm link --global
-if errorlevel 1 echo [.opencode] pnpm global link failed, trying npm link...
 call npm link
 if errorlevel 1 goto :fail
 popd >nul

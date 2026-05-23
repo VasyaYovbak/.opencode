@@ -11,6 +11,9 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
+printf '%s\n' '[.opencode] Installing/updating OpenCode globally...'
+npm install -g opencode-ai
+
 printf '%s\n' '[.opencode] Installing root dependencies...'
 (cd "$SCRIPT_DIR" && npm ci)
 
@@ -21,6 +24,6 @@ printf '%s\n' '[.opencode] Installing smart-explore MCP dependencies...'
 node "$SCRIPT_DIR/mcp/smart-explore/scripts/bootstrap-mcp.cjs"
 
 printf '%s\n' '[.opencode] Linking smart-explore-mcp command globally...'
-(cd "$SCRIPT_DIR/mcp/smart-explore" && pnpm link --global)
+(cd "$SCRIPT_DIR/mcp/smart-explore" && npm link)
 
 printf '%s\n' '[.opencode] Install complete.'

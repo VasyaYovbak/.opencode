@@ -50,6 +50,7 @@ function runCommand(command, args, options = {}) {
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: process.env,
+      shell: process.platform === 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
