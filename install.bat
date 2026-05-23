@@ -28,13 +28,18 @@ if errorlevel 1 goto :fail
 echo [.opencode] Linking smart-explore-mcp command globally...
 pushd "%SCRIPT_DIR%mcp\smart-explore" >nul
 call pnpm link --global
+if errorlevel 1 echo [.opencode] pnpm global link failed, trying npm link...
+call npm link
 if errorlevel 1 goto :fail
 popd >nul
 
 echo [.opencode] Install complete.
+pause
 exit /b 0
 
 :fail
 set "EXIT_CODE=%ERRORLEVEL%"
 if exist "%SCRIPT_DIR%" popd >nul 2>nul
+echo [.opencode] Install failed with exit code %EXIT_CODE%.
+pause
 exit /b %EXIT_CODE%
