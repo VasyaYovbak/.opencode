@@ -1,0 +1,89 @@
+{
+  "name": "smart-explore-mcp",
+  "version": "12.2.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "description": "Runtime dependencies for claude-mem bundled hooks",
+  "type": "module",
+  "dependencies": {
+    "@derekstride/tree-sitter-sql": "^0.3.11",
+    "@tree-sitter-grammars/tree-sitter-lua": "^0.4.1",
+    "@tree-sitter-grammars/tree-sitter-markdown": "^0.3.2",
+    "@tree-sitter-grammars/tree-sitter-toml": "^0.7.0",
+    "@tree-sitter-grammars/tree-sitter-yaml": "^0.7.1",
+    "@tree-sitter-grammars/tree-sitter-zig": "1.1.2",
+    "tree-sitter-bash": "^0.25.1",
+    "tree-sitter-c": "^0.24.1",
+    "tree-sitter-cli": "^0.26.9",
+    "tree-sitter-cpp": "^0.23.4",
+    "tree-sitter-css": "^0.25.0",
+    "tree-sitter-elixir": "^0.3.5",
+    "tree-sitter-go": "^0.25.0",
+    "tree-sitter-haskell": "^0.23.1",
+    "tree-sitter-html": "0.23.2",
+    "tree-sitter-java": "^0.23.5",
+    "tree-sitter-javascript": "^0.25.0",
+    "tree-sitter-kotlin": "^0.3.8",
+    "tree-sitter-php": "^0.24.2",
+    "tree-sitter-python": "^0.25.0",
+    "tree-sitter-ruby": "^0.23.1",
+    "tree-sitter-rust": "^0.24.0",
+    "tree-sitter-scala": "^0.24.0",
+    "tree-sitter-scss": "^1.0.0",
+    "tree-sitter-swift": "^0.7.1",
+    "tree-sitter-typescript": "^0.23.2"
+  },
+  "bin": {
+    "smart-explore-mcp": "./scripts/mcp-server.cjs"
+  },
+  "scripts": {
+    "build": "node scripts/build.js",
+    "start": "node scripts/mcp-server.cjs",
+    "smart-explore-mcp": "node scripts/mcp-server.cjs"
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "ignoreMissing": [
+        "tree-sitter"
+      ]
+    },
+    "onlyBuiltDependencies": [
+      "@derekstride/tree-sitter-sql",
+      "@tree-sitter-grammars/tree-sitter-lua",
+      "@tree-sitter-grammars/tree-sitter-markdown",
+      "@tree-sitter-grammars/tree-sitter-toml",
+      "@tree-sitter-grammars/tree-sitter-yaml",
+      "@tree-sitter-grammars/tree-sitter-zig",
+      "esbuild",
+      "tree-sitter-bash",
+      "tree-sitter-c",
+      "tree-sitter-cli",
+      "tree-sitter-cpp",
+      "tree-sitter-css",
+      "tree-sitter-elixir",
+      "tree-sitter-go",
+      "tree-sitter-haskell",
+      "tree-sitter-html",
+      "tree-sitter-java",
+      "tree-sitter-javascript",
+      "tree-sitter-kotlin",
+      "tree-sitter-php",
+      "tree-sitter-python",
+      "tree-sitter-ruby",
+      "tree-sitter-rust",
+      "tree-sitter-scala",
+      "tree-sitter-scss",
+      "tree-sitter-swift",
+      "tree-sitter-typescript"
+    ]
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@types/node": "^25.9.1",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.3"
+  }
+}
