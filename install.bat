@@ -21,9 +21,31 @@ call npm ci
 if errorlevel 1 goto :fail
 popd >nul
 
-echo [.opencode] Installing pnpm@%PNPM_VERSION%...
-call npm install -g "pnpm@%PNPM_VERSION%"
-if errorlevel 1 goto :fail
+set "CURRENT_PNPM_VERSION="
+where pnpm >nul 2>nul
+if not errorlevel 1 (
+  for /f "usebackq delims=" %%v in (`pnpm --version 2^>nul`) do set "CURRENT_PNPM_VERSION=%%v"
+)
+
+if "%CURRENT_PNPM_VERSION%"=="%PNPM_VERSION%" (
+  echo [.opencode] pnpm@%PNPM_VERSION% already available; skipping global install.
+) else (
+  if defined CURRENT_PNPM_VERSION (
+    echo [.opencode] Found pnpm@%CURRENT_PNPM_VERSION%; activating pnpm@%PNPM_VERSION%...
+  ) else (
+    echo [.opencode] Installing pnpm@%PNPM_VERSION%...
+  )
+
+  where corepack >nul 2>nul
+  if errorlevel 1 (
+    call npm install -g "pnpm@%PNPM_VERSION%"
+  ) else (
+    call corepack enable
+    if errorlevel 1 goto :fail
+    call corepack prepare "pnpm@%PNPM_VERSION%" --activate
+  )
+  if errorlevel 1 goto :fail
+)
 
 echo [.opencode] Installing smart-explore MCP dependencies...
 call node "%SCRIPT_DIR%mcp\smart-explore\scripts\bootstrap-mcp.cjs"
