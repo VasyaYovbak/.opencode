@@ -1,50 +1,70 @@
-# Project Agent Rules
+## 1. Think Before Coding
 
-These rules apply to **every** agent (primary and subagents) working in this repository. They are loaded automatically into the agent context by opencode.
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
 
----
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
 
-## 1. Simplicity first (KISS)
+## 2. Simplicity First
 
-- Implement **exactly** what the developer asked for. Nothing more.
-- Do **not** introduce wrappers, factories, abstractions, plugin systems, or "future-proof" indirection unless the developer explicitly asks for them.
-- Do **not** anticipate features that "might be needed later". YAGNI.
-- You **may** suggest improvements or alternatives in plain text — but only implement them after the developer confirms.
-- Prefer the smallest, most direct change that solves the problem.
+**Minimum code that solves the problem. Nothing speculative.**
 
-## 2. Architecture-aware communication (code-writing agents only)
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
 
-This rule applies to agents that modify code (e.g. `dev` when it edits directly, `implementer`). It does **not** apply to read-only agents (`planner`, `explorer`, `reviewer`).
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
 
-Before writing or editing code, the agent **must** consult the developer via the `question` tool on architectural decisions, including (but not limited to):
+## 3. Surgical Changes
 
-- Where a new file / module / class should live
-- Choice between competing patterns when the codebase doesn't already dictate one (e.g. `pydantic` model vs `dataclass` vs `TypedDict`, sync vs async, function vs class)
-- Whether a piece of logic should be reusable / generalized or kept local
-- Naming of public APIs, modules, packages
-- Introducing a new dependency
+**Touch only what you must. Clean up only your own mess.**
 
-Do **not** ask trivial line-level questions. Ask only decisions that meaningfully shape the code's structure.
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
 
-If a similar decision was already made earlier in the conversation, follow it without re-asking.
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
 
-## 3. All edits require approval
+The test: Every changed line should trace directly to the user's request.
 
-- The `edit` permission is set to `ask` for every agent. Do not try to bypass it.
-- Show the developer the diff / intent before writing.
-- Never `--no-verify`, never force-push, never amend pushed commits.
+## 4. Goal-Driven Execution
 
-## 4. Parallel-first orchestration (`dev` agent)
+**Define success criteria. Loop until verified.**
 
-The primary `dev` agent **must**:
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
 
-1. First **decompose** the developer's request into independent units of work.
-2. For trivial single-step tasks — handle them directly.
-3. For multi-part tasks — invoke specialized subagents via the Task tool, **fanning out in a single message** when units are independent (this runs them in parallel).
-4. Aggregate results and present a coherent summary to the developer.
+For multi-step tasks, state a brief plan:
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
 
-Specialists available:
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-- `@planner` — produce a phased plan (uses the `make-plan` skill)
-- `@explorer` — fast read-only code search (uses the `smart-explore` skill)
-- `@implementer` — write/edit code with architecture-aware questioning
+## 5. Batch Tool Execution
+
+**Think ahead. Default to parallel batches. Serial tool calls are the exception.**
+
+Before running tools:
+- Pause and list the independent reads, searches, inspections, or checks that could run together.
+- Batch every independent tool call in one parallel call whenever the tool interface allows it.
+- Prefer one broad, deliberate batch over many small follow-up calls, even if the batch includes speculative but relevant searches.
+- When searching, issue likely file-name, content, and config searches together instead of waiting for one result at a time.
+- Do not serialize tool calls for convenience, habit, or because it is easier to reason step-by-step.
+- Only call tools one at a time when the next call genuinely depends on the previous result.
+- If you make a serial call, be able to explain the dependency that prevented batching.
+
+The test: If two tool calls could safely run at the same time, they must be batched.
