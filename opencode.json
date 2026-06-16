@@ -68,6 +68,18 @@
           "options": {
             "serviceTier": "flex"
           }
+        },
+        "gpt-5.4-nano-flex": {
+          "id": "gpt-5.4-nano",
+          "name": "gpt-5.4 nano FLEX",
+          "cost": {
+            "input": 0.1,
+            "cache_read": 0.01,
+            "output": 0.625
+          },
+          "options": {
+            "serviceTier": "flex"
+          }
         }
       }
     }
@@ -76,5 +88,5 @@
   "plugin": [
     "./plugins_dist/oh-my-opencode-tool-only/index.ts",
     "./plugins/batch-tool-reminder.ts"
-  ]
+   ]
 }

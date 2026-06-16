@@ -3,7 +3,7 @@
  *
  * Exposes structural code exploration tools:
  *   smart_search  — AST-indexed symbol search across a directory
- *   smart_outline — structural skeleton of a single file
+ *   smart_outline — structural skeleton of a file or directory
  *   smart_unfold  — full source of one named symbol
  *   smart_callers — incoming call edges for a symbol
  *   smart_callees — outgoing call edges for a symbol
@@ -30,12 +30,13 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { searchCodebase, formatSearchResults } from './search.js';
+import { searchCodebase, formatSearchResults, collectSearchableFiles } from './search.js';
 import { parseFile, formatFoldedView, unfoldSymbol } from './parser.js';
 import { findCallers, findCallees, relatedFiles } from './relations.js';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+const MAX_OUTLINE_DIRECTORY_FILES = 200;
 const tools = [
   {
     name: 'smart_search',
@@ -63,14 +64,32 @@ const tools = [
           description:
             'Substring filter for file paths (e.g. ".ts", "src/services")',
         },
+        exclude_paths: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Directory paths to exclude before scanning, relative to path',
+        },
+        exclude_dirs: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Alias for exclude_paths',
+        },
       },
       required: ['query'],
     },
     handler: async (args: any) => {
       const rootDir = resolve(args.path || process.cwd());
+      const excludePaths = Array.isArray(args.exclude_paths)
+        ? args.exclude_paths
+        : Array.isArray(args.exclude_dirs)
+          ? args.exclude_dirs
+          : undefined;
       const result = await searchCodebase(rootDir, args.query, {
         maxResults: args.max_results || 20,
         filePattern: args.file_pattern,
+        excludePaths,
       });
       const formatted = formatSearchResults(result, args.query);
       return { content: [{ type: 'text' as const, text: formatted }] };
@@ -129,19 +148,66 @@ const tools = [
   {
     name: 'smart_outline',
     description:
-      'Get structural outline of a file — shows all symbols (functions, classes, methods, types) with signatures but bodies folded. Much cheaper than reading the full file.',
+      'Get structural outline of a file or directory — shows all symbols (functions, classes, methods, types) with signatures but bodies folded. Much cheaper than reading the full source.',
     inputSchema: {
       type: 'object',
       properties: {
         file_path: {
           type: 'string',
-          description: 'Path to the source file',
+          description: 'Path to the file or directory',
         },
       },
       required: ['file_path'],
     },
     handler: async (args: any) => {
       const filePath = resolve(args.file_path);
+      const target = await stat(filePath);
+
+      if (target.isDirectory()) {
+        const { files, truncated } = await collectSearchableFiles(filePath, {
+          projectRoot: filePath,
+          maxFiles: MAX_OUTLINE_DIRECTORY_FILES,
+        });
+
+        const outlines: string[] = [];
+        let skippedFiles = 0;
+
+        for (const file of files) {
+          const parsed = parseFile(file.content, file.relativePath, filePath);
+          if (parsed.symbols.length > 0) {
+            outlines.push(formatFoldedView(parsed));
+          } else {
+            skippedFiles++;
+          }
+        }
+
+        if (outlines.length > 0) {
+          const parts: string[] = [];
+          if (truncated) {
+            parts.push(
+              `Directory outline limited to the first ${MAX_OUTLINE_DIRECTORY_FILES} files under ${args.file_path}. Narrow the path if you need more.`,
+              ''
+            );
+          }
+          if (skippedFiles > 0) {
+            parts.push(`Skipped ${skippedFiles} unsupported or empty files.`, '');
+          }
+          parts.push(outlines.join('\n\n'));
+          return {
+            content: [{ type: 'text' as const, text: parts.join('\n') }],
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Could not parse ${args.file_path}. Directory may contain unsupported or empty files only.`,
+            },
+          ],
+        };
+      }
+
       const content = await readFile(filePath, 'utf-8');
       const parsed = parseFile(content, filePath);
       if (parsed.symbols.length > 0) {

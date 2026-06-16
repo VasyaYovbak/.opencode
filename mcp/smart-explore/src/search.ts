@@ -58,6 +58,20 @@ export interface SearchResult {
   tokenEstimate: number;
 }
 
+export interface SearchableFile {
+  absolutePath: string;
+  relativePath: string;
+  content: string;
+}
+
+export interface CollectSearchableFilesOptions {
+  filePattern?: string;
+  projectRoot?: string;
+  excludePaths?: string[];
+  maxDepth?: number;
+  maxFiles?: number;
+}
+
 export interface SymbolMatch {
   filePath: string;
   symbolName: string;
@@ -73,7 +87,13 @@ export interface SymbolMatch {
  * Walk a directory recursively, yielding file paths.
  * extraExtensions: additional file extensions to include (from user grammar config).
  */
-async function* walkDir(dir: string, rootDir: string, maxDepth: number = 20, extraExtensions?: Set<string>): AsyncGenerator<string> {
+async function* walkDir(
+  dir: string,
+  rootDir: string,
+  maxDepth: number = 20,
+  extraExtensions?: Set<string>,
+  excludedPaths: Set<string> = new Set()
+ ): AsyncGenerator<string> {
   if (maxDepth <= 0) return;
 
   let entries;
@@ -83,6 +103,8 @@ async function* walkDir(dir: string, rootDir: string, maxDepth: number = 20, ext
     return; // permission denied, etc.
   }
 
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+
   for (const entry of entries) {
     if (entry.name.startsWith(".") && entry.name !== ".") continue;
     if (IGNORE_DIRS.has(entry.name)) continue;
@@ -90,7 +112,9 @@ async function* walkDir(dir: string, rootDir: string, maxDepth: number = 20, ext
     const fullPath = join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      yield* walkDir(fullPath, rootDir, maxDepth - 1, extraExtensions);
+      const relDirPath = normalizeRelativePath(relative(rootDir, fullPath));
+      if (isExcludedPath(relDirPath, excludedPaths)) continue;
+      yield* walkDir(fullPath, rootDir, maxDepth - 1, extraExtensions, excludedPaths);
     } else if (entry.isFile()) {
       const ext = entry.name.slice(entry.name.lastIndexOf("."));
       if (CODE_EXTENSIONS.has(ext) || (extraExtensions && extraExtensions.has(ext))) {
@@ -98,6 +122,26 @@ async function* walkDir(dir: string, rootDir: string, maxDepth: number = 20, ext
       }
     }
   }
+}
+
+function normalizeRelativePath(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+  return normalized === "." ? "" : normalized;
+}
+
+function isExcludedPath(relPath: string, excludedPaths: Set<string>): boolean {
+  if (!relPath) return false;
+
+  let current = normalizeRelativePath(relPath);
+  while (current) {
+    if (excludedPaths.has(current)) return true;
+
+    const slashIndex = current.lastIndexOf("/");
+    if (slashIndex === -1) return false;
+    current = current.slice(0, slashIndex);
+  }
+
+  return false;
 }
 
 /**
@@ -120,6 +164,62 @@ async function safeReadFile(filePath: string): Promise<string | null> {
   }
 }
 
+export async function collectSearchableFiles(
+  rootDir: string,
+  options: CollectSearchableFilesOptions = {}
+ ): Promise<{ files: SearchableFile[]; truncated: boolean }> {
+  const projectRoot = options.projectRoot || rootDir;
+  const userConfig = loadUserGrammars(projectRoot);
+  const extraExtensions = new Set<string>();
+  for (const entry of Object.values(userConfig.grammars)) {
+    for (const ext of entry.extensions) {
+      if (!CODE_EXTENSIONS.has(ext)) {
+        extraExtensions.add(ext);
+      }
+    }
+  }
+
+  const excludedPaths = new Set(
+    (options.excludePaths || [])
+      .map(normalizeRelativePath)
+      .filter((path) => path.length > 0)
+  );
+
+  const files: SearchableFile[] = [];
+  let truncated = false;
+
+  for await (const filePath of walkDir(
+    rootDir,
+    rootDir,
+    options.maxDepth || 20,
+    extraExtensions.size > 0 ? extraExtensions : undefined,
+    excludedPaths
+  )) {
+    const relativePath = normalizeRelativePath(relative(rootDir, filePath));
+    if (options.filePattern) {
+      if (!relativePath.toLowerCase().includes(options.filePattern.toLowerCase())) continue;
+    }
+
+    const content = await safeReadFile(filePath);
+    if (!content) continue;
+
+    files.push({
+      absolutePath: filePath,
+      relativePath,
+      content,
+    });
+
+    if (options.maxFiles && files.length >= options.maxFiles) {
+      truncated = true;
+      break;
+    }
+  }
+
+  files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+
+  return { files, truncated };
+}
+
 /**
  * Search a codebase for symbols matching a query.
  *
@@ -135,42 +235,20 @@ export async function searchCodebase(
     includeImports?: boolean;
     filePattern?: string;
     projectRoot?: string;
+    excludePaths?: string[];
   } = {}
 ): Promise<SearchResult> {
   const maxResults = options.maxResults || 20;
   const queryLower = query.toLowerCase();
   const queryParts = queryLower.split(/[\s_\-./]+/).filter(p => p.length > 0);
 
-  // Load user grammar config for extra file extensions
+  // Phase 1: Collect files and read content
   const projectRoot = options.projectRoot || rootDir;
-  const userConfig = loadUserGrammars(projectRoot);
-  const extraExtensions = new Set<string>();
-  for (const entry of Object.values(userConfig.grammars)) {
-    for (const ext of entry.extensions) {
-      if (!CODE_EXTENSIONS.has(ext)) {
-        extraExtensions.add(ext);
-      }
-    }
-  }
-
-  // Phase 1: Collect files
-  const filesToParse: Array<{ absolutePath: string; relativePath: string; content: string }> = [];
-
-  for await (const filePath of walkDir(rootDir, rootDir, 20, extraExtensions.size > 0 ? extraExtensions : undefined)) {
-    if (options.filePattern) {
-      const relPath = relative(rootDir, filePath);
-      if (!relPath.toLowerCase().includes(options.filePattern.toLowerCase())) continue;
-    }
-
-    const content = await safeReadFile(filePath);
-    if (!content) continue;
-
-    filesToParse.push({
-      absolutePath: filePath,
-      relativePath: relative(rootDir, filePath),
-      content,
-    });
-  }
+  const { files: filesToParse } = await collectSearchableFiles(rootDir, {
+    filePattern: options.filePattern,
+    projectRoot,
+    excludePaths: options.excludePaths,
+  });
 
   // Phase 2: Batch parse (one CLI call per language)
   const parsedFiles = parseFilesBatch(filesToParse, projectRoot);

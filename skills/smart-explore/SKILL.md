@@ -15,7 +15,7 @@ This skill only loads instructions. You must call the MCP tools yourself. Your n
 
 ```
 smart-explore_smart_search(query="<topic>", path="./src")    -- discover files + symbols across a directory
-smart-explore_smart_outline(file_path="<file>")              -- structural skeleton of one file
+smart-explore_smart_outline(file_path="<file-or-dir>")       -- structural skeleton of a file or directory
 smart-explore_smart_unfold(file_path="<file>", symbol_name="<name>")  -- full source of one symbol
 smart-explore_smart_callers(symbol_name="<name>", path="./src")       -- incoming call edges
 smart-explore_smart_callees(symbol_name="<name>", path="./src")       -- outgoing call edges
@@ -54,6 +54,7 @@ This is your discovery tool. It finds relevant files AND shows their structure. 
 - `max_results` (number) -- Max matching symbols, default 20, max 50
 - `file_pattern` (string, optional) -- Filter to specific files/paths
 
+- `exclude_paths` / `exclude_dirs` (string[], optional) -- Exclude directories relative to `path` before scanning
 ### Step 2: Outline -- Get File Structure
 
 ```
@@ -66,7 +67,7 @@ smart-explore_smart_outline(file_path="services/worker-service.ts")
 
 **Parameters:**
 
-- `file_path` (string, required) -- Path to the file
+- `file_path` (string, required) -- Path to the file or directory
 
 ### Step 3: Unfold -- See Implementation
 

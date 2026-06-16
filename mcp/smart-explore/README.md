@@ -11,7 +11,7 @@ Six MCP tools, exposed under the `smart-explore_` prefix:
 | Tool                          | Purpose                                                 | Token cost |
 | ----------------------------- | ------------------------------------------------------- | ---------- |
 | `smart-explore_smart_search`  | Symbol search across a directory (folded views)         | ~2-6k      |
-| `smart-explore_smart_outline` | Structural skeleton of one file                         | ~1-2k      |
+| `smart-explore_smart_outline` | Structural skeleton of a file or directory              | ~1-2k      |
 | `smart-explore_smart_unfold`  | Full source of one named symbol from a file             | ~400-2.1k  |
 | `smart-explore_smart_callers` | Incoming call edges for one symbol                      | ~1-3k      |
 | `smart-explore_smart_callees` | Outgoing call edges from one symbol                     | ~1-3k      |
@@ -19,6 +19,12 @@ Six MCP tools, exposed under the `smart-explore_` prefix:
 
 These replace the typical `Glob → Grep → Read` discovery cycle when you want to
 **explore** code structure rather than read full files.
+
+`smart-explore_smart_search` can exclude subdirectories before scanning via
+relative `exclude_paths` (or the alias `exclude_dirs`).
+`smart-explore_smart_outline` also accepts a directory and returns the same
+file-level outline format concatenated for discovered files, with a built-in
+safety cap for very large directories.
 
 ## Layout
 

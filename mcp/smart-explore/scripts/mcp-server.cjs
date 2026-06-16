@@ -16425,7 +16425,7 @@ var IGNORE_DIRS = /* @__PURE__ */ new Set([
   ".smart-file-read"
 ]);
 var MAX_FILE_SIZE = 512 * 1024;
-async function* walkDir(dir, rootDir, maxDepth = 20, extraExtensions) {
+async function* walkDir(dir, rootDir, maxDepth = 20, extraExtensions, excludedPaths = /* @__PURE__ */ new Set()) {
   if (maxDepth <= 0) return;
   let entries;
   try {
@@ -16433,12 +16433,15 @@ async function* walkDir(dir, rootDir, maxDepth = 20, extraExtensions) {
   } catch {
     return;
   }
+  entries.sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     if (entry.name.startsWith(".") && entry.name !== ".") continue;
     if (IGNORE_DIRS.has(entry.name)) continue;
     const fullPath = (0, import_node_path2.join)(dir, entry.name);
     if (entry.isDirectory()) {
-      yield* walkDir(fullPath, rootDir, maxDepth - 1, extraExtensions);
+      const relDirPath = normalizeRelativePath((0, import_node_path2.relative)(rootDir, fullPath));
+      if (isExcludedPath(relDirPath, excludedPaths)) continue;
+      yield* walkDir(fullPath, rootDir, maxDepth - 1, extraExtensions, excludedPaths);
     } else if (entry.isFile()) {
       const ext = entry.name.slice(entry.name.lastIndexOf("."));
       if (CODE_EXTENSIONS.has(ext) || extraExtensions && extraExtensions.has(ext)) {
@@ -16446,6 +16449,21 @@ async function* walkDir(dir, rootDir, maxDepth = 20, extraExtensions) {
       }
     }
   }
+}
+function normalizeRelativePath(path) {
+  const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+  return normalized === "." ? "" : normalized;
+}
+function isExcludedPath(relPath, excludedPaths) {
+  if (!relPath) return false;
+  let current = normalizeRelativePath(relPath);
+  while (current) {
+    if (excludedPaths.has(current)) return true;
+    const slashIndex = current.lastIndexOf("/");
+    if (slashIndex === -1) return false;
+    current = current.slice(0, slashIndex);
+  }
+  return false;
 }
 async function safeReadFile(filePath) {
   try {
@@ -16459,10 +16477,7 @@ async function safeReadFile(filePath) {
     return null;
   }
 }
-async function searchCodebase(rootDir, query, options = {}) {
-  const maxResults = options.maxResults || 20;
-  const queryLower = query.toLowerCase();
-  const queryParts = queryLower.split(/[\s_\-./]+/).filter((p) => p.length > 0);
+async function collectSearchableFiles(rootDir, options = {}) {
   const projectRoot = options.projectRoot || rootDir;
   const userConfig = loadUserGrammars(projectRoot);
   const extraExtensions = /* @__PURE__ */ new Set();
@@ -16473,20 +16488,47 @@ async function searchCodebase(rootDir, query, options = {}) {
       }
     }
   }
-  const filesToParse = [];
-  for await (const filePath of walkDir(rootDir, rootDir, 20, extraExtensions.size > 0 ? extraExtensions : void 0)) {
+  const excludedPaths = new Set(
+    (options.excludePaths || []).map(normalizeRelativePath).filter((path) => path.length > 0)
+  );
+  const files = [];
+  let truncated = false;
+  for await (const filePath of walkDir(
+    rootDir,
+    rootDir,
+    options.maxDepth || 20,
+    extraExtensions.size > 0 ? extraExtensions : void 0,
+    excludedPaths
+  )) {
+    const relativePath = normalizeRelativePath((0, import_node_path2.relative)(rootDir, filePath));
     if (options.filePattern) {
-      const relPath = (0, import_node_path2.relative)(rootDir, filePath);
-      if (!relPath.toLowerCase().includes(options.filePattern.toLowerCase())) continue;
+      if (!relativePath.toLowerCase().includes(options.filePattern.toLowerCase())) continue;
     }
     const content = await safeReadFile(filePath);
     if (!content) continue;
-    filesToParse.push({
+    files.push({
       absolutePath: filePath,
-      relativePath: (0, import_node_path2.relative)(rootDir, filePath),
+      relativePath,
       content
     });
+    if (options.maxFiles && files.length >= options.maxFiles) {
+      truncated = true;
+      break;
+    }
   }
+  files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  return { files, truncated };
+}
+async function searchCodebase(rootDir, query, options = {}) {
+  const maxResults = options.maxResults || 20;
+  const queryLower = query.toLowerCase();
+  const queryParts = queryLower.split(/[\s_\-./]+/).filter((p) => p.length > 0);
+  const projectRoot = options.projectRoot || rootDir;
+  const { files: filesToParse } = await collectSearchableFiles(rootDir, {
+    filePattern: options.filePattern,
+    projectRoot,
+    excludePaths: options.excludePaths
+  });
   const parsedFiles = parseFilesBatch(filesToParse, projectRoot);
   const foldedFiles = [];
   const matchingSymbols = [];
@@ -16969,6 +17011,7 @@ var import_node_path4 = require("node:path");
 var packageVersion = true ? "12.2.0" : "0.0.0-dev";
 var _log = (...args) => process.stderr.write(args.join(" ") + "\n");
 console["log"] = _log;
+var MAX_OUTLINE_DIRECTORY_FILES = 200;
 var tools = [
   {
     name: "smart_search",
@@ -16991,15 +17034,27 @@ var tools = [
         file_pattern: {
           type: "string",
           description: 'Substring filter for file paths (e.g. ".ts", "src/services")'
+        },
+        exclude_paths: {
+          type: "array",
+          items: { type: "string" },
+          description: "Directory paths to exclude before scanning, relative to path"
+        },
+        exclude_dirs: {
+          type: "array",
+          items: { type: "string" },
+          description: "Alias for exclude_paths"
         }
       },
       required: ["query"]
     },
     handler: async (args) => {
       const rootDir = (0, import_node_path4.resolve)(args.path || process.cwd());
+      const excludePaths = Array.isArray(args.exclude_paths) ? args.exclude_paths : Array.isArray(args.exclude_dirs) ? args.exclude_dirs : void 0;
       const result = await searchCodebase(rootDir, args.query, {
         maxResults: args.max_results || 20,
-        filePattern: args.file_pattern
+        filePattern: args.file_pattern,
+        excludePaths
       });
       const formatted = formatSearchResults(result, args.query);
       return { content: [{ type: "text", text: formatted }] };
@@ -17056,19 +17111,60 @@ ${available}`
   },
   {
     name: "smart_outline",
-    description: "Get structural outline of a file \u2014 shows all symbols (functions, classes, methods, types) with signatures but bodies folded. Much cheaper than reading the full file.",
+    description: "Get structural outline of a file or directory \u2014 shows all symbols (functions, classes, methods, types) with signatures but bodies folded. Much cheaper than reading the full source.",
     inputSchema: {
       type: "object",
       properties: {
         file_path: {
           type: "string",
-          description: "Path to the source file"
+          description: "Path to the file or directory"
         }
       },
       required: ["file_path"]
     },
     handler: async (args) => {
       const filePath = (0, import_node_path4.resolve)(args.file_path);
+      const target = await (0, import_promises3.stat)(filePath);
+      if (target.isDirectory()) {
+        const { files, truncated } = await collectSearchableFiles(filePath, {
+          projectRoot: filePath,
+          maxFiles: MAX_OUTLINE_DIRECTORY_FILES
+        });
+        const outlines = [];
+        let skippedFiles = 0;
+        for (const file of files) {
+          const parsed2 = parseFile(file.content, file.relativePath, filePath);
+          if (parsed2.symbols.length > 0) {
+            outlines.push(formatFoldedView(parsed2));
+          } else {
+            skippedFiles++;
+          }
+        }
+        if (outlines.length > 0) {
+          const parts = [];
+          if (truncated) {
+            parts.push(
+              `Directory outline limited to the first ${MAX_OUTLINE_DIRECTORY_FILES} files under ${args.file_path}. Narrow the path if you need more.`,
+              ""
+            );
+          }
+          if (skippedFiles > 0) {
+            parts.push(`Skipped ${skippedFiles} unsupported or empty files.`, "");
+          }
+          parts.push(outlines.join("\n\n"));
+          return {
+            content: [{ type: "text", text: parts.join("\n") }]
+          };
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Could not parse ${args.file_path}. Directory may contain unsupported or empty files only.`
+            }
+          ]
+        };
+      }
       const content = await (0, import_promises3.readFile)(filePath, "utf-8");
       const parsed = parseFile(content, filePath);
       if (parsed.symbols.length > 0) {
