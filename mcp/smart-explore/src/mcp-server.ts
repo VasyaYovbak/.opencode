@@ -31,8 +31,9 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { searchCodebase, formatSearchResults, collectSearchableFiles } from './search.js';
-import { parseFile, formatFoldedView, unfoldSymbol } from './parser.js';
+import { parseFile, formatFoldedView, unfoldSymbol, readFileSection } from './parser.js';
 import { findCallers, findCallees, relatedFiles } from './relations.js';
+import { isHashlineEditEnabled } from './hashline.js';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -98,7 +99,7 @@ const tools = [
   {
     name: 'smart_unfold',
     description:
-      'Expand a specific symbol (function, class, method) from a file. Returns the full source code of just that symbol. Use after smart_search or smart_outline to read specific code.',
+      'Expand a specific symbol (function, class, method) from a file, or read a section of a file by line number/anchor. Returns the full source code of just that symbol or section. Use after smart_search or smart_outline to read specific code. When symbol_name is omitted, reads a file section starting at offset (1-indexed) for limit lines. Pass anchor (LINE#HASH from outline output) to verify the file hasn\'t changed since the outline was generated.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -109,14 +110,53 @@ const tools = [
         symbol_name: {
           type: 'string',
           description:
-            'Name of the symbol to unfold (function, class, method, etc.)',
+            'Name of the symbol to unfold (function, class, method, etc.). Omit to read a file section by offset/anchor instead.',
+        },
+        offset: {
+          type: 'number',
+          description: 'Starting line number (1-indexed, default 1). Only used when symbol_name is omitted.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum lines to read (default 200). Start with a small limit and increase if needed. Only used when symbol_name is omitted.',
+        },
+        anchor: {
+          type: 'string',
+          description:
+            'Line anchor from outline output (format: LINE#HASH, e.g. "41#SN"). Takes precedence over offset. Verifies the file hasn\'t changed since outline. Only used when symbol_name is omitted.',
         },
       },
-      required: ['file_path', 'symbol_name'],
+      required: ['file_path'],
     },
     handler: async (args: any) => {
       const filePath = resolve(args.file_path);
       const content = await readFile(filePath, 'utf-8');
+
+      // File section read mode (no symbol_name)
+      if (!args.symbol_name) {
+        try {
+          const section = readFileSection(
+            content,
+            filePath,
+            args.offset ?? 1,
+            args.limit ?? 200,
+            args.anchor
+          );
+          return { content: [{ type: 'text' as const, text: section }] };
+        } catch (error) {
+          return {
+            content: [
+            {
+              type: 'text' as const,
+              text: error instanceof Error ? error.message : String(error),
+            },
+          ],
+          isError: true,
+        };
+        }
+      }
+
+      // Symbol unfold mode (existing behavior)
       const unfolded = unfoldSymbol(content, filePath, args.symbol_name);
       if (unfolded) {
         return { content: [{ type: 'text' as const, text: unfolded }] };
@@ -362,6 +402,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function main() {
+  isHashlineEditEnabled(); // warm config cache at startup
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write(`[mcp-server] smart-explore v${packageVersion} ready\n`);

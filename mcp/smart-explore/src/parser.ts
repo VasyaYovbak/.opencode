@@ -15,6 +15,7 @@ import { writeFileSync, readFileSync, mkdtempSync, rmSync, existsSync } from "no
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
+import { formatHashLine, lineAnchor, isHashlineEditEnabled, parseAnchor, verifyLineAnchor } from "./hashline.js";
 
 // The distributed server is bundled as CJS, so use Node's runtime __filename.
 const _require = createRequire(__filename);
@@ -31,6 +32,8 @@ export interface CodeSymbol {
   parent?: string;
   exported: boolean;
   children?: CodeSymbol[];
+  hashStart?: string;
+  hashEnd?: string;
 }
 
 export interface FoldedFile {
@@ -322,6 +325,7 @@ const QUERIES: Record<string, string> = {
   jsts: `
 (function_declaration name: (identifier) @name) @func
 (lexical_declaration (variable_declarator name: (identifier) @name value: [(arrow_function) (function_expression)])) @const_func
+(lexical_declaration (variable_declarator name: (identifier) @name value: [(array) (object) (new_expression) (ternary_expression)])) @const_var
 (class_declaration name: (type_identifier) @name) @cls
 (method_definition name: (property_identifier) @name) @method
 (interface_declaration name: (type_identifier) @name) @iface
@@ -641,6 +645,7 @@ function parseMultiFileQueryOutput(output: string): Map<string, RawMatch[]> {
 const KIND_MAP: Record<string, CodeSymbol["kind"]> = {
   func: "function",
   const_func: "function",
+  const_var: "const",
   cls: "class",
   method: "method",
   iface: "interface",
@@ -734,6 +739,7 @@ function buildSymbols(matches: RawMatch[], lines: string[], language: string): {
   const imports: string[] = [];
   const exportRanges: Array<{ startRow: number; endRow: number }> = [];
   const containers: Array<{ sym: CodeSymbol; startRow: number; endRow: number }> = [];
+  const hashlineEnabled = isHashlineEditEnabled();
 
   // Collect exports and imports
   for (const match of matches) {
@@ -788,6 +794,10 @@ function buildSymbols(matches: RawMatch[], lines: string[], language: string): {
       lineEnd: endRow,
       exported: isExported(name, startRow, endRow, exportRanges, lines, language),
     };
+    if (hashlineEnabled) {
+      sym.hashStart = lineAnchor(sym.lineStart + 1, (lines[sym.lineStart] ?? "").replace(/\r$/, ""));
+      sym.hashEnd = lineAnchor(sym.lineEnd + 1, (lines[sym.lineEnd] ?? "").replace(/\r$/, ""));
+    }
 
     if (CONTAINER_KINDS.has(kind)) {
       sym.children = [];
@@ -820,6 +830,40 @@ function buildSymbols(matches: RawMatch[], lines: string[], language: string): {
     }
     if (duplicateCodeBlocks.size > 0) {
       const filtered = symbols.filter(s => !duplicateCodeBlocks.has(s));
+      symbols.length = 0;
+      symbols.push(...filtered);
+    }
+  }
+  // Filter out const_var declarations nested inside functions, containers, or other const_vars.
+  // They're local implementation details, not structural landmarks — showing
+  // them would bloat the outline with local variables the agent didn't ask for.
+  // Note: const_func (arrow functions) maps to "function" kind, so this only
+  // affects const_var (arrays, objects, new expressions, ternaries).
+  // Including const_var ranges catches locals inside arrow-function handlers
+  // assigned to object properties (e.g. `handler: async () => { const x = ... }`)
+  // which the query doesn't capture as standalone functions.
+  const scopeRanges: Array<{ startRow: number; endRow: number }> = [];
+  for (const sym of symbols) {
+    if (sym.kind === "function" || sym.kind === "const") {
+      scopeRanges.push({ startRow: sym.lineStart, endRow: sym.lineEnd });
+    }
+  }
+  for (const container of containers) {
+    scopeRanges.push({ startRow: container.startRow, endRow: container.endRow });
+  }
+  if (scopeRanges.length > 0) {
+    const nestedConstVars = new Set<CodeSymbol>();
+    for (const sym of symbols) {
+      if (sym.kind !== "const") continue;
+      for (const range of scopeRanges) {
+        if (sym.lineStart > range.startRow && sym.lineEnd <= range.endRow) {
+          nestedConstVars.add(sym);
+          break;
+        }
+      }
+    }
+    if (nestedConstVars.size > 0) {
+      const filtered = symbols.filter(s => !nestedConstVars.has(s));
       symbols.length = 0;
       symbols.push(...filtered);
     }
@@ -995,7 +1039,12 @@ function formatMarkdownFoldedView(file: FoldedFile): string {
       const indent = "  ".repeat(level);
       const lineRange = `L${sym.lineStart + 1}`;
       const content = `${indent}${sym.signature}`;
-      parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      const anchor = anchorRange(sym);
+      if (anchor) {
+        parts.push(`${content.padEnd(COL_WIDTH)}${anchor}`);
+      } else {
+        parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      }
     } else if (sym.kind === "code") {
       // Find containing heading level for indentation
       const containingLevel = findContainingHeadingLevel(file.symbols, sym.lineStart);
@@ -1004,19 +1053,34 @@ function formatMarkdownFoldedView(file: FoldedFile): string {
         ? `L${sym.lineStart + 1}`
         : `L${sym.lineStart + 1}-${sym.lineEnd + 1}`;
       const content = `${indent}${sym.signature}`;
-      parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      const anchor = anchorRange(sym);
+      if (anchor) {
+        parts.push(`${content.padEnd(COL_WIDTH)}${anchor}`);
+      } else {
+        parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      }
     } else if (sym.kind === "metadata") {
       const lineRange = sym.lineStart === sym.lineEnd
         ? `L${sym.lineStart + 1}`
         : `L${sym.lineStart + 1}-${sym.lineEnd + 1}`;
       const content = `  ${sym.signature}`;
-      parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      const anchor = anchorRange(sym);
+      if (anchor) {
+        parts.push(`${content.padEnd(COL_WIDTH)}${anchor}`);
+      } else {
+        parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      }
     } else if (sym.kind === "reference") {
       const containingLevel = findContainingHeadingLevel(file.symbols, sym.lineStart);
       const indent = "  ".repeat(containingLevel + 1);
       const lineRange = `L${sym.lineStart + 1}`;
       const content = `${indent}↗ ${sym.name}`;
-      parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      const anchor = anchorRange(sym);
+      if (anchor) {
+        parts.push(`${content.padEnd(COL_WIDTH)}${anchor}`);
+      } else {
+        parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      }
     }
   }
 
@@ -1038,6 +1102,16 @@ function findContainingHeadingLevel(symbols: CodeSymbol[], lineStart: number): n
   return bestLevel;
 }
 
+
+/**
+ * Anchor range for a symbol: `25#NJ` (single line) or `25#NJ-35#XX` (range).
+ * Empty string when hashline mode is off.
+ */
+function anchorRange(sym: CodeSymbol): string {
+  if (!sym.hashStart) return "";
+  return sym.hashEnd && sym.hashEnd !== sym.hashStart ? `${sym.hashStart}-${sym.hashEnd}` : sym.hashStart;
+}
+
 function formatSymbol(sym: CodeSymbol, indent: string): string {
   const parts: string[] = [];
 
@@ -1047,7 +1121,12 @@ function formatSymbol(sym: CodeSymbol, indent: string): string {
     ? `L${sym.lineStart + 1}`
     : `L${sym.lineStart + 1}-${sym.lineEnd + 1}`;
 
-  parts.push(`${indent}${icon} ${sym.name}${exportTag} (${lineRange})`);
+  const anchor = anchorRange(sym);
+  if (anchor) {
+    parts.push(`${indent}${icon} ${sym.name}${exportTag} ${anchor}`);
+  } else {
+    parts.push(`${indent}${icon} ${sym.name}${exportTag} (${lineRange})`);
+  }
   parts.push(`${indent}  ${sym.signature}`);
 
   if (sym.jsdoc) {
@@ -1126,8 +1205,12 @@ export function unfoldSymbol(content: string, filePath: string, symbolName: stri
       }
     }
 
-    const extracted = lines.slice(start, end + 1).join("\n");
-    return `<!-- 📍 ${filePath} L${start + 1}-${end + 1} -->\n${extracted}`;
+    const slice = lines.slice(start, end + 1);
+    if (isHashlineEditEnabled()) {
+      const hashlined = slice.map((ln, i) => formatHashLine(start + 1 + i, ln.replace(/\r$/, "")));
+      return `<!-- 📍 ${filePath} -->\n${hashlined.join("\n")}`;
+    }
+    return `<!-- 📍 ${filePath} L${start + 1}-${end + 1} -->\n${slice.join("\n")}`;
   }
 
   // Include preceding comments/decorators
@@ -1144,6 +1227,65 @@ export function unfoldSymbol(content: string, filePath: string, symbolName: stri
     }
   }
 
-  const extracted = lines.slice(start, symbol.lineEnd + 1).join("\n");
-  return `// 📍 ${filePath} L${start + 1}-${symbol.lineEnd + 1}\n${extracted}`;
+  const slice = lines.slice(start, symbol.lineEnd + 1);
+  if (isHashlineEditEnabled()) {
+    const hashlined = slice.map((ln, i) => formatHashLine(start + 1 + i, ln.replace(/\r$/, "")));
+    return `// 📍 ${filePath}\n${hashlined.join("\n")}`;
+  }
+  return `// 📍 ${filePath} L${start + 1}-${symbol.lineEnd + 1}\n${slice.join("\n")}`;
+}
+
+/**
+ * Read a section of a file by line number or anchor.
+ * Used when smart_outline doesn't surface the needed content (e.g. top-level
+ * expression statements, configuration blocks, content between symbols).
+ *
+ * When `anchor` is provided (format: "LINE#HASH" from outline output), verifies
+ * the file hasn't changed since the outline was generated. Throws on mismatch.
+ */
+export function readFileSection(
+  content: string,
+  filePath: string,
+  offset: number = 1,
+  limit: number = 200,
+  anchor?: string
+): string {
+  const lines = content.split("\n");
+  const totalLines = lines.length;
+  let startLine = Math.max(1, offset);
+
+  if (anchor) {
+    const parsed = parseAnchor(anchor);
+    if (!parsed) {
+      throw new Error(`Invalid anchor format: "${anchor}". Expected format: LINE#HASH (e.g. "41#SN").`);
+    }
+    startLine = parsed.lineNumber;
+    if (startLine < 1 || startLine > totalLines) {
+      throw new Error(
+        `Anchor line ${startLine} is out of range (file has ${totalLines} lines). File may have changed — re-run smart_outline.`
+      );
+    }
+    const lineContent = (lines[startLine - 1] ?? "").replace(/\r$/, "");
+    if (!verifyLineAnchor(startLine, lineContent, parsed.hash)) {
+      throw new Error(
+        `Anchor "${anchor}" does not match current file content. File has changed since outline was generated — re-run smart_outline.`
+      );
+    }
+  }
+
+  const effectiveLimit = limit > 0 ? limit : 200;
+  const startIdx = Math.max(0, startLine - 1);
+  const endIdx = Math.min(totalLines, startIdx + effectiveLimit);
+  const slice = lines.slice(startIdx, endIdx);
+  const endLine = startLine + slice.length - 1;
+
+  if (slice.length === 0) {
+    return `// 📍 ${filePath} L${startLine}-${startLine} (empty — offset beyond end of ${totalLines}-line file)`;
+  }
+
+  if (isHashlineEditEnabled()) {
+    const hashlined = slice.map((ln, i) => formatHashLine(startLine + i, ln.replace(/\r$/, "")));
+    return `// 📍 ${filePath}\n${hashlined.join("\n")}`;
+  }
+  return `// 📍 ${filePath} L${startLine}-${endLine}\n${slice.join("\n")}`;
 }

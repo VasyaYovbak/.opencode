@@ -81,6 +81,8 @@ export interface SymbolMatch {
   lineStart: number;
   lineEnd: number;
   matchReason: string; // why this matched
+  hashStart?: string;
+  hashEnd?: string;
 }
 
 /**
@@ -297,6 +299,8 @@ export async function searchCodebase(
             lineStart: sym.lineStart,
             lineEnd: sym.lineEnd,
             matchReason: reason,
+            hashStart: sym.hashStart,
+            hashEnd: sym.hashEnd,
           });
         }
 
@@ -394,7 +398,14 @@ export function formatSearchResults(result: SearchResult, query: string): string
   parts.push("── Matching Symbols ──");
   parts.push("");
   for (const match of result.matchingSymbols) {
-    parts.push(`  ${match.kind} ${match.symbolName} (${match.filePath}:${match.lineStart + 1})`);
+    const anchor = match.hashStart
+      ? (match.hashEnd && match.hashEnd !== match.hashStart ? `${match.hashStart}-${match.hashEnd}` : match.hashStart)
+      : "";
+    if (anchor) {
+      parts.push(`  ${match.kind} ${match.symbolName} (${match.filePath} ${anchor})`);
+    } else {
+      parts.push(`  ${match.kind} ${match.symbolName} (${match.filePath}:${match.lineStart + 1})`);
+    }
     parts.push(`    ${match.signature}`);
     if (match.jsdoc) {
       const firstLine = match.jsdoc.split("\n").find(l => l.replace(/^[\s*/]+/, "").trim().length > 0);

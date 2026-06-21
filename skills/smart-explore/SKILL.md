@@ -16,7 +16,7 @@ This skill only loads instructions. You must call the MCP tools yourself. Your n
 ```
 smart-explore_smart_search(query="<topic>", path="./src")    -- discover files + symbols across a directory
 smart-explore_smart_outline(file_path="<file-or-dir>")       -- structural skeleton of a file or directory
-smart-explore_smart_unfold(file_path="<file>", symbol_name="<name>")  -- full source of one symbol
+smart-explore_smart_unfold(file_path="<file>", symbol_name="<name>")  -- full source of one symbol OR a file section by offset/anchor
 smart-explore_smart_callers(symbol_name="<name>", path="./src")       -- incoming call edges
 smart-explore_smart_callees(symbol_name="<name>", path="./src")       -- outgoing call edges
 smart-explore_smart_related_files(file_path="<file>", path=".")       -- import/test file graph
@@ -69,7 +69,7 @@ smart-explore_smart_outline(file_path="services/worker-service.ts")
 
 - `file_path` (string, required) -- Path to the file or directory
 
-### Step 3: Unfold -- See Implementation
+### Step 3: Unfold -- See Implementation or Read a File Section
 
 Review symbols from Steps 1-2. Pick the ones you need. Unfold only those:
 
@@ -77,12 +77,23 @@ Review symbols from Steps 1-2. Pick the ones you need. Unfold only those:
 smart-explore_smart_unfold(file_path="services/worker-service.ts", symbol_name="shutdown")
 ```
 
-**Returns:** Full source code of the specified symbol including JSDoc, decorators, and complete implementation (~400-2,100 tokens depending on symbol size). AST node boundaries guarantee completeness regardless of symbol size — unlike Read + agent summarization, which may truncate long methods.
+**Returns:** Full source code of the specified symbol including JSDoc, decorators, and complete implementation (~400-2,100 tokens depending on symbol size). AST node boundaries guarantee completeness regardless of symbol size.
 
 **Parameters:**
 
 - `file_path` (string, required) -- Path to the file (as returned by search/outline)
-- `symbol_name` (string, required) -- Name of the function/class/method to expand
+- `symbol_name` (string, optional) -- Name of the function/class/method to expand. Omit to read a file section instead.
+
+**File section mode:** When `symbol_name` is omitted, reads a section of the file by line number or anchor. Use this when `smart_outline` doesn't show what you need (e.g. top-level expression statements, configuration blocks, or content between symbols).
+
+```
+smart-explore_smart_unfold(file_path="src/mcp-server.ts", offset=41, limit=50)
+smart-explore_smart_unfold(file_path="src/mcp-server.ts", anchor="41#SN")
+```
+
+- `offset` (number, optional) -- Starting line number (1-indexed, default 1)
+- `limit` (number, optional) -- Maximum lines to read (default 200). Start with a small limit and increase if needed — don't pull 2000 lines when you need 50.
+- `anchor` (string, optional) -- Line anchor from outline output (format: `LINE#HASH`). Takes precedence over `offset` and verifies the file hasn't changed since the outline was generated.
 
 ### Step 4: Relationships -- Follow Edges, Not Text Matches
 
@@ -120,7 +131,7 @@ Relationship tools are lexical/AST-assisted, not full type inference. They are b
 Use these only when smart-explore_* tools are the wrong fit:
 
 - **Grep:** Exact string/regex search ("find all TODO comments", "where is `ensureWorkerStarted` defined?")
-- **Read:** Small files under ~100 lines, non-code files (JSON, markdown, config)
+- **Read:** Non-code files (JSON, markdown, config). For code files, use `smart_unfold` with `offset`/`anchor` instead.
 - **Glob:** File path patterns ("find all test files")
 - **Explore agent:** When you need synthesized understanding across 6+ files, architecture narratives, or answers to open-ended questions like "how does this entire system work end-to-end?" Smart-explore is a scalpel — it answers "where is this?" and "show me that." It doesn't synthesize cross-file data flows, design decisions, or edge cases across an entire feature.
 

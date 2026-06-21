@@ -15448,14 +15448,186 @@ var StdioServerTransport = class {
 
 // src/search.ts
 var import_promises = require("node:fs/promises");
-var import_node_path2 = require("node:path");
+var import_node_path3 = require("node:path");
 
 // src/parser.ts
 var import_node_child_process = require("node:child_process");
+var import_node_fs2 = require("node:fs");
+var import_node_path2 = require("node:path");
+var import_node_os2 = require("node:os");
+var import_node_module = require("node:module");
+
+// src/hashline.ts
 var import_node_fs = require("node:fs");
 var import_node_path = require("node:path");
 var import_node_os = require("node:os");
-var import_node_module = require("node:module");
+var NIBBLE_STR = "ZPMQVRWSNKTXJBYH";
+var HASHLINE_DICT = Array.from({ length: 256 }, (_, i) => {
+  const high = i >>> 4;
+  const low = i & 15;
+  return `${NIBBLE_STR[high]}${NIBBLE_STR[low]}`;
+});
+var PRIME32_1 = 2654435761;
+var PRIME32_2 = 2246822519;
+var PRIME32_3 = 3266489917;
+var PRIME32_4 = 668265263;
+var PRIME32_5 = 374761393;
+var encoder = new TextEncoder();
+function rotateLeft32(value, bits) {
+  return (value << bits | value >>> 32 - bits) >>> 0;
+}
+function readUint32LittleEndian(input, offset) {
+  return ((input[offset] ?? 0) | (input[offset + 1] ?? 0) << 8 | (input[offset + 2] ?? 0) << 16 | (input[offset + 3] ?? 0) << 24) >>> 0;
+}
+function round32(accumulator, value) {
+  const added = accumulator + Math.imul(value, PRIME32_2) >>> 0;
+  return Math.imul(rotateLeft32(added, 13), PRIME32_1) >>> 0;
+}
+function xxHash32Js(input, seed) {
+  let offset = 0;
+  const length = input.length;
+  let hash;
+  if (length >= 16) {
+    const limit = length - 16;
+    let v1 = seed + PRIME32_1 + PRIME32_2 >>> 0;
+    let v2 = seed + PRIME32_2 >>> 0;
+    let v3 = seed >>> 0;
+    let v4 = seed - PRIME32_1 >>> 0;
+    while (offset <= limit) {
+      v1 = round32(v1, readUint32LittleEndian(input, offset));
+      offset += 4;
+      v2 = round32(v2, readUint32LittleEndian(input, offset));
+      offset += 4;
+      v3 = round32(v3, readUint32LittleEndian(input, offset));
+      offset += 4;
+      v4 = round32(v4, readUint32LittleEndian(input, offset));
+      offset += 4;
+    }
+    hash = rotateLeft32(v1, 1) + rotateLeft32(v2, 7) >>> 0;
+    hash = hash + rotateLeft32(v3, 12) >>> 0;
+    hash = hash + rotateLeft32(v4, 18) >>> 0;
+  } else {
+    hash = seed + PRIME32_5 >>> 0;
+  }
+  hash = hash + length >>> 0;
+  while (offset + 4 <= length) {
+    hash = hash + Math.imul(readUint32LittleEndian(input, offset), PRIME32_3) >>> 0;
+    hash = Math.imul(rotateLeft32(hash, 17), PRIME32_4) >>> 0;
+    offset += 4;
+  }
+  while (offset < length) {
+    hash = hash + Math.imul(input[offset] ?? 0, PRIME32_5) >>> 0;
+    hash = Math.imul(rotateLeft32(hash, 11), PRIME32_1) >>> 0;
+    offset += 1;
+  }
+  hash = (hash ^ hash >>> 15) >>> 0;
+  hash = Math.imul(hash, PRIME32_2) >>> 0;
+  hash = (hash ^ hash >>> 13) >>> 0;
+  hash = Math.imul(hash, PRIME32_3) >>> 0;
+  return (hash ^ hash >>> 16) >>> 0;
+}
+function hashXxh32(input, seed) {
+  return xxHash32Js(encoder.encode(input), seed >>> 0);
+}
+var RE_SIGNIFICANT = /[\p{L}\p{N}]/u;
+function computeLineHash(lineNumber, content) {
+  const normalized = content.replace(/\r/g, "").trimEnd();
+  const seed = RE_SIGNIFICANT.test(normalized) ? 0 : lineNumber;
+  const index = hashXxh32(normalized, seed) % 256;
+  return HASHLINE_DICT[index];
+}
+function formatHashLine(lineNumber, content) {
+  const hash = computeLineHash(lineNumber, content);
+  return `${lineNumber}#${hash}|${content}`;
+}
+function lineAnchor(lineNumber, content) {
+  return `${lineNumber}#${computeLineHash(lineNumber, content)}`;
+}
+function parseAnchor(anchor) {
+  const match = anchor.match(/^(\d+)#([A-Z]{2})$/);
+  if (!match) return null;
+  return { lineNumber: parseInt(match[1], 10), hash: match[2] };
+}
+function verifyLineAnchor(lineNumber, content, expectedHash) {
+  return computeLineHash(lineNumber, content) === expectedHash;
+}
+var cachedEnabled = null;
+function stripJsonComments(text) {
+  let out = "";
+  let i = 0;
+  let inString = false;
+  const n = text.length;
+  while (i < n) {
+    const ch = text[i];
+    if (inString) {
+      out += ch;
+      if (ch === "\\" && i + 1 < n) {
+        out += text[i + 1];
+        i += 2;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      i += 1;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === "/" && text[i + 1] === "/") {
+      while (i < n && text[i] !== "\n") i += 1;
+      continue;
+    }
+    if (ch === "/" && text[i + 1] === "*") {
+      i += 2;
+      while (i < n && !(text[i] === "*" && text[i + 1] === "/")) i += 1;
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+function resolveOpencodeConfigDirs() {
+  const dirs = /* @__PURE__ */ new Set();
+  const custom2 = process.env.OPENCODE_CONFIG_DIR?.trim();
+  if (custom2) dirs.add(custom2);
+  const xdg = process.env.XDG_CONFIG_HOME?.trim() || (0, import_node_path.join)((0, import_node_os.homedir)(), ".config");
+  dirs.add((0, import_node_path.join)(xdg, "opencode"));
+  return [...dirs];
+}
+function readHashlineEditFlag() {
+  const basenames = ["oh-my-openagent", "oh-my-opencode"];
+  const exts = [".json", ".jsonc"];
+  for (const dir of resolveOpencodeConfigDirs()) {
+    for (const base of basenames) {
+      for (const ext of exts) {
+        const candidate = (0, import_node_path.join)(dir, base + ext);
+        if (!(0, import_node_fs.existsSync)(candidate)) continue;
+        try {
+          const raw = (0, import_node_fs.readFileSync)(candidate, "utf-8");
+          const parsed = JSON.parse(stripJsonComments(raw));
+          if (parsed && typeof parsed === "object" && typeof parsed.hashline_edit === "boolean") {
+            return parsed.hashline_edit;
+          }
+        } catch {
+        }
+      }
+    }
+  }
+  return false;
+}
+function isHashlineEditEnabled() {
+  if (cachedEnabled === null) {
+    cachedEnabled = readHashlineEditFlag();
+  }
+  return cachedEnabled;
+}
+
+// src/parser.ts
 var _require = (0, import_node_module.createRequire)(__filename);
 var LANG_MAP = {
   ".js": "javascript",
@@ -15522,10 +15694,10 @@ var EMPTY_USER_GRAMMAR_CONFIG = {
 };
 function loadUserGrammars(projectRoot) {
   if (userGrammarCache.has(projectRoot)) return userGrammarCache.get(projectRoot);
-  const configPath = (0, import_node_path.join)(projectRoot, ".claude-mem.json");
+  const configPath = (0, import_node_path2.join)(projectRoot, ".claude-mem.json");
   let rawConfig;
   try {
-    const content = (0, import_node_fs.readFileSync)(configPath, "utf-8");
+    const content = (0, import_node_fs2.readFileSync)(configPath, "utf-8");
     rawConfig = JSON.parse(content);
   } catch {
     userGrammarCache.set(projectRoot, EMPTY_USER_GRAMMAR_CONFIG);
@@ -15561,9 +15733,9 @@ function loadUserGrammars(projectRoot) {
       }
     }
     if (typeof queryPath === "string") {
-      const fullQueryPath = (0, import_node_path.join)(projectRoot, queryPath);
+      const fullQueryPath = (0, import_node_path2.join)(projectRoot, queryPath);
       try {
-        const queryContent = (0, import_node_fs.readFileSync)(fullQueryPath, "utf-8");
+        const queryContent = (0, import_node_fs2.readFileSync)(fullQueryPath, "utf-8");
         const queryKey = `user_${language}`;
         QUERIES[queryKey] = queryContent;
         config2.languageToQueryKey[language] = queryKey;
@@ -15616,15 +15788,15 @@ function resolveGrammarPath(language) {
   if (subdir) {
     try {
       const rootPkgPath = _require.resolve(pkg + "/package.json");
-      const resolved = (0, import_node_path.join)((0, import_node_path.dirname)(rootPkgPath), subdir);
-      if ((0, import_node_fs.existsSync)((0, import_node_path.join)(resolved, "src"))) return resolved;
+      const resolved = (0, import_node_path2.join)((0, import_node_path2.dirname)(rootPkgPath), subdir);
+      if ((0, import_node_fs2.existsSync)((0, import_node_path2.join)(resolved, "src"))) return resolved;
     } catch {
     }
     return null;
   }
   try {
     const packageJsonPath = _require.resolve(pkg + "/package.json");
-    return (0, import_node_path.dirname)(packageJsonPath);
+    return (0, import_node_path2.dirname)(packageJsonPath);
   } catch {
     return null;
   }
@@ -15637,10 +15809,10 @@ function resolveGrammarPathWithFallback(language, projectRoot) {
   const entry = userConfig.grammars[language];
   if (!entry) return null;
   try {
-    const packageJsonPath = (0, import_node_path.join)(projectRoot, "node_modules", entry.package, "package.json");
-    if ((0, import_node_fs.existsSync)(packageJsonPath)) {
-      const grammarDir = (0, import_node_path.dirname)(packageJsonPath);
-      if ((0, import_node_fs.existsSync)((0, import_node_path.join)(grammarDir, "src"))) return grammarDir;
+    const packageJsonPath = (0, import_node_path2.join)(projectRoot, "node_modules", entry.package, "package.json");
+    if ((0, import_node_fs2.existsSync)(packageJsonPath)) {
+      const grammarDir = (0, import_node_path2.dirname)(packageJsonPath);
+      if ((0, import_node_fs2.existsSync)((0, import_node_path2.join)(grammarDir, "src"))) return grammarDir;
     }
   } catch {
   }
@@ -15651,6 +15823,7 @@ var QUERIES = {
   jsts: `
 (function_declaration name: (identifier) @name) @func
 (lexical_declaration (variable_declarator name: (identifier) @name value: [(arrow_function) (function_expression)])) @const_func
+(lexical_declaration (variable_declarator name: (identifier) @name value: [(array) (object) (new_expression) (ternary_expression)])) @const_var
 (class_declaration name: (type_identifier) @name) @cls
 (method_definition name: (property_identifier) @name) @method
 (interface_declaration name: (type_identifier) @name) @iface
@@ -15851,10 +16024,10 @@ var queryFileCache = /* @__PURE__ */ new Map();
 function getQueryFile(queryKey) {
   if (queryFileCache.has(queryKey)) return queryFileCache.get(queryKey);
   if (!queryTmpDir) {
-    queryTmpDir = (0, import_node_fs.mkdtempSync)((0, import_node_path.join)((0, import_node_os.tmpdir)(), "smart-read-queries-"));
+    queryTmpDir = (0, import_node_fs2.mkdtempSync)((0, import_node_path2.join)((0, import_node_os2.tmpdir)(), "smart-read-queries-"));
   }
-  const filePath = (0, import_node_path.join)(queryTmpDir, `${queryKey}.scm`);
-  (0, import_node_fs.writeFileSync)(filePath, QUERIES[queryKey]);
+  const filePath = (0, import_node_path2.join)(queryTmpDir, `${queryKey}.scm`);
+  (0, import_node_fs2.writeFileSync)(filePath, QUERIES[queryKey]);
   queryFileCache.set(queryKey, filePath);
   return filePath;
 }
@@ -15863,8 +16036,8 @@ function getTreeSitterBin() {
   if (cachedBinPath) return cachedBinPath;
   try {
     const pkgPath = _require.resolve("tree-sitter-cli/package.json");
-    const binPath = (0, import_node_path.join)((0, import_node_path.dirname)(pkgPath), "tree-sitter");
-    if ((0, import_node_fs.existsSync)(binPath)) {
+    const binPath = (0, import_node_path2.join)((0, import_node_path2.dirname)(pkgPath), "tree-sitter");
+    if ((0, import_node_fs2.existsSync)(binPath)) {
       cachedBinPath = binPath;
       return binPath;
     }
@@ -15928,6 +16101,7 @@ function parseMultiFileQueryOutput(output) {
 var KIND_MAP = {
   func: "function",
   const_func: "function",
+  const_var: "const",
   cls: "class",
   method: "method",
   iface: "interface",
@@ -16005,6 +16179,7 @@ function buildSymbols(matches, lines, language) {
   const imports = [];
   const exportRanges = [];
   const containers = [];
+  const hashlineEnabled = isHashlineEditEnabled();
   for (const match of matches) {
     for (const cap of match.captures) {
       if (cap.tag === "exp") {
@@ -16050,6 +16225,10 @@ function buildSymbols(matches, lines, language) {
       lineEnd: endRow,
       exported: isExported(name, startRow, endRow, exportRanges, lines, language)
     };
+    if (hashlineEnabled) {
+      sym.hashStart = lineAnchor(sym.lineStart + 1, (lines[sym.lineStart] ?? "").replace(/\r$/, ""));
+      sym.hashEnd = lineAnchor(sym.lineEnd + 1, (lines[sym.lineEnd] ?? "").replace(/\r$/, ""));
+    }
     if (CONTAINER_KINDS.has(kind)) {
       sym.children = [];
       containers.push({ sym, startRow, endRow });
@@ -16076,6 +16255,32 @@ function buildSymbols(matches, lines, language) {
     }
     if (duplicateCodeBlocks.size > 0) {
       const filtered = symbols.filter((s) => !duplicateCodeBlocks.has(s));
+      symbols.length = 0;
+      symbols.push(...filtered);
+    }
+  }
+  const scopeRanges = [];
+  for (const sym of symbols) {
+    if (sym.kind === "function" || sym.kind === "const") {
+      scopeRanges.push({ startRow: sym.lineStart, endRow: sym.lineEnd });
+    }
+  }
+  for (const container of containers) {
+    scopeRanges.push({ startRow: container.startRow, endRow: container.endRow });
+  }
+  if (scopeRanges.length > 0) {
+    const nestedConstVars = /* @__PURE__ */ new Set();
+    for (const sym of symbols) {
+      if (sym.kind !== "const") continue;
+      for (const range of scopeRanges) {
+        if (sym.lineStart > range.startRow && sym.lineEnd <= range.endRow) {
+          nestedConstVars.add(sym);
+          break;
+        }
+      }
+    }
+    if (nestedConstVars.size > 0) {
+      const filtered = symbols.filter((s) => !nestedConstVars.has(s));
       symbols.length = 0;
       symbols.push(...filtered);
     }
@@ -16111,9 +16316,9 @@ function parseFile(content, filePath, projectRoot) {
   const queryKey = getUserAwareQueryKey(language, userConfig);
   const queryFile = getQueryFile(queryKey);
   const ext = filePath.slice(filePath.lastIndexOf(".")) || ".txt";
-  const tmpDir = (0, import_node_fs.mkdtempSync)((0, import_node_path.join)((0, import_node_os.tmpdir)(), "smart-src-"));
-  const tmpFile = (0, import_node_path.join)(tmpDir, `source${ext}`);
-  (0, import_node_fs.writeFileSync)(tmpFile, content);
+  const tmpDir = (0, import_node_fs2.mkdtempSync)((0, import_node_path2.join)((0, import_node_os2.tmpdir)(), "smart-src-"));
+  const tmpFile = (0, import_node_path2.join)(tmpDir, `source${ext}`);
+  (0, import_node_fs2.writeFileSync)(tmpFile, content);
   try {
     const matches = runQuery(queryFile, tmpFile, grammarPath);
     const result = buildSymbols(matches, lines, language);
@@ -16134,7 +16339,7 @@ function parseFile(content, filePath, projectRoot) {
       foldedTokenEstimate: Math.ceil(folded.length / 4)
     };
   } finally {
-    (0, import_node_fs.rmSync)(tmpDir, { recursive: true, force: true });
+    (0, import_node_fs2.rmSync)(tmpDir, { recursive: true, force: true });
   }
 }
 function parseFilesBatch(files, projectRoot) {
@@ -16223,23 +16428,43 @@ function formatMarkdownFoldedView(file) {
       const indent = "  ".repeat(level);
       const lineRange = `L${sym.lineStart + 1}`;
       const content = `${indent}${sym.signature}`;
-      parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      const anchor = anchorRange(sym);
+      if (anchor) {
+        parts.push(`${content.padEnd(COL_WIDTH)}${anchor}`);
+      } else {
+        parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      }
     } else if (sym.kind === "code") {
       const containingLevel = findContainingHeadingLevel(file.symbols, sym.lineStart);
       const indent = "  ".repeat(containingLevel + 1);
       const lineRange = sym.lineStart === sym.lineEnd ? `L${sym.lineStart + 1}` : `L${sym.lineStart + 1}-${sym.lineEnd + 1}`;
       const content = `${indent}${sym.signature}`;
-      parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      const anchor = anchorRange(sym);
+      if (anchor) {
+        parts.push(`${content.padEnd(COL_WIDTH)}${anchor}`);
+      } else {
+        parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      }
     } else if (sym.kind === "metadata") {
       const lineRange = sym.lineStart === sym.lineEnd ? `L${sym.lineStart + 1}` : `L${sym.lineStart + 1}-${sym.lineEnd + 1}`;
       const content = `  ${sym.signature}`;
-      parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      const anchor = anchorRange(sym);
+      if (anchor) {
+        parts.push(`${content.padEnd(COL_WIDTH)}${anchor}`);
+      } else {
+        parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      }
     } else if (sym.kind === "reference") {
       const containingLevel = findContainingHeadingLevel(file.symbols, sym.lineStart);
       const indent = "  ".repeat(containingLevel + 1);
       const lineRange = `L${sym.lineStart + 1}`;
       const content = `${indent}\u2197 ${sym.name}`;
-      parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      const anchor = anchorRange(sym);
+      if (anchor) {
+        parts.push(`${content.padEnd(COL_WIDTH)}${anchor}`);
+      } else {
+        parts.push(`${content.padEnd(COL_WIDTH)}${lineRange}`);
+      }
     }
   }
   return parts.join("\n");
@@ -16254,12 +16479,21 @@ function findContainingHeadingLevel(symbols, lineStart) {
   }
   return bestLevel;
 }
+function anchorRange(sym) {
+  if (!sym.hashStart) return "";
+  return sym.hashEnd && sym.hashEnd !== sym.hashStart ? `${sym.hashStart}-${sym.hashEnd}` : sym.hashStart;
+}
 function formatSymbol(sym, indent) {
   const parts = [];
   const icon = getSymbolIcon(sym.kind);
   const exportTag = sym.exported ? " [exported]" : "";
   const lineRange = sym.lineStart === sym.lineEnd ? `L${sym.lineStart + 1}` : `L${sym.lineStart + 1}-${sym.lineEnd + 1}`;
-  parts.push(`${indent}${icon} ${sym.name}${exportTag} (${lineRange})`);
+  const anchor = anchorRange(sym);
+  if (anchor) {
+    parts.push(`${indent}${icon} ${sym.name}${exportTag} ${anchor}`);
+  } else {
+    parts.push(`${indent}${icon} ${sym.name}${exportTag} (${lineRange})`);
+  }
   parts.push(`${indent}  ${sym.signature}`);
   if (sym.jsdoc) {
     const jsdocLines = sym.jsdoc.split("\n");
@@ -16337,9 +16571,14 @@ function unfoldSymbol(content, filePath, symbolName) {
         }
       }
     }
-    const extracted2 = lines.slice(start2, end + 1).join("\n");
+    const slice2 = lines.slice(start2, end + 1);
+    if (isHashlineEditEnabled()) {
+      const hashlined = slice2.map((ln, i) => formatHashLine(start2 + 1 + i, ln.replace(/\r$/, "")));
+      return `<!-- \u{1F4CD} ${filePath} -->
+${hashlined.join("\n")}`;
+    }
     return `<!-- \u{1F4CD} ${filePath} L${start2 + 1}-${end + 1} -->
-${extracted2}`;
+${slice2.join("\n")}`;
   }
   let start = symbol.lineStart;
   for (let i = symbol.lineStart - 1; i >= 0; i--) {
@@ -16350,9 +16589,52 @@ ${extracted2}`;
       break;
     }
   }
-  const extracted = lines.slice(start, symbol.lineEnd + 1).join("\n");
+  const slice = lines.slice(start, symbol.lineEnd + 1);
+  if (isHashlineEditEnabled()) {
+    const hashlined = slice.map((ln, i) => formatHashLine(start + 1 + i, ln.replace(/\r$/, "")));
+    return `// \u{1F4CD} ${filePath}
+${hashlined.join("\n")}`;
+  }
   return `// \u{1F4CD} ${filePath} L${start + 1}-${symbol.lineEnd + 1}
-${extracted}`;
+${slice.join("\n")}`;
+}
+function readFileSection(content, filePath, offset = 1, limit = 200, anchor) {
+  const lines = content.split("\n");
+  const totalLines = lines.length;
+  let startLine = Math.max(1, offset);
+  if (anchor) {
+    const parsed = parseAnchor(anchor);
+    if (!parsed) {
+      throw new Error(`Invalid anchor format: "${anchor}". Expected format: LINE#HASH (e.g. "41#SN").`);
+    }
+    startLine = parsed.lineNumber;
+    if (startLine < 1 || startLine > totalLines) {
+      throw new Error(
+        `Anchor line ${startLine} is out of range (file has ${totalLines} lines). File may have changed \u2014 re-run smart_outline.`
+      );
+    }
+    const lineContent = (lines[startLine - 1] ?? "").replace(/\r$/, "");
+    if (!verifyLineAnchor(startLine, lineContent, parsed.hash)) {
+      throw new Error(
+        `Anchor "${anchor}" does not match current file content. File has changed since outline was generated \u2014 re-run smart_outline.`
+      );
+    }
+  }
+  const effectiveLimit = limit > 0 ? limit : 200;
+  const startIdx = Math.max(0, startLine - 1);
+  const endIdx = Math.min(totalLines, startIdx + effectiveLimit);
+  const slice = lines.slice(startIdx, endIdx);
+  const endLine = startLine + slice.length - 1;
+  if (slice.length === 0) {
+    return `// \u{1F4CD} ${filePath} L${startLine}-${startLine} (empty \u2014 offset beyond end of ${totalLines}-line file)`;
+  }
+  if (isHashlineEditEnabled()) {
+    const hashlined = slice.map((ln, i) => formatHashLine(startLine + i, ln.replace(/\r$/, "")));
+    return `// \u{1F4CD} ${filePath}
+${hashlined.join("\n")}`;
+  }
+  return `// \u{1F4CD} ${filePath} L${startLine}-${endLine}
+${slice.join("\n")}`;
 }
 
 // src/search.ts
@@ -16437,9 +16719,9 @@ async function* walkDir(dir, rootDir, maxDepth = 20, extraExtensions, excludedPa
   for (const entry of entries) {
     if (entry.name.startsWith(".") && entry.name !== ".") continue;
     if (IGNORE_DIRS.has(entry.name)) continue;
-    const fullPath = (0, import_node_path2.join)(dir, entry.name);
+    const fullPath = (0, import_node_path3.join)(dir, entry.name);
     if (entry.isDirectory()) {
-      const relDirPath = normalizeRelativePath((0, import_node_path2.relative)(rootDir, fullPath));
+      const relDirPath = normalizeRelativePath((0, import_node_path3.relative)(rootDir, fullPath));
       if (isExcludedPath(relDirPath, excludedPaths)) continue;
       yield* walkDir(fullPath, rootDir, maxDepth - 1, extraExtensions, excludedPaths);
     } else if (entry.isFile()) {
@@ -16500,7 +16782,7 @@ async function collectSearchableFiles(rootDir, options = {}) {
     extraExtensions.size > 0 ? extraExtensions : void 0,
     excludedPaths
   )) {
-    const relativePath = normalizeRelativePath((0, import_node_path2.relative)(rootDir, filePath));
+    const relativePath = normalizeRelativePath((0, import_node_path3.relative)(rootDir, filePath));
     if (options.filePattern) {
       if (!relativePath.toLowerCase().includes(options.filePattern.toLowerCase())) continue;
     }
@@ -16565,7 +16847,9 @@ async function searchCodebase(rootDir, query, options = {}) {
             jsdoc: sym.jsdoc,
             lineStart: sym.lineStart,
             lineEnd: sym.lineEnd,
-            matchReason: reason
+            matchReason: reason,
+            hashStart: sym.hashStart,
+            hashEnd: sym.hashEnd
           });
         }
         if (sym.children) {
@@ -16640,7 +16924,12 @@ function formatSearchResults(result, query) {
   parts.push("\u2500\u2500 Matching Symbols \u2500\u2500");
   parts.push("");
   for (const match of result.matchingSymbols) {
-    parts.push(`  ${match.kind} ${match.symbolName} (${match.filePath}:${match.lineStart + 1})`);
+    const anchor = match.hashStart ? match.hashEnd && match.hashEnd !== match.hashStart ? `${match.hashStart}-${match.hashEnd}` : match.hashStart : "";
+    if (anchor) {
+      parts.push(`  ${match.kind} ${match.symbolName} (${match.filePath} ${anchor})`);
+    } else {
+      parts.push(`  ${match.kind} ${match.symbolName} (${match.filePath}:${match.lineStart + 1})`);
+    }
     parts.push(`    ${match.signature}`);
     if (match.jsdoc) {
       const firstLine = match.jsdoc.split("\n").find((l) => l.replace(/^[\s*/]+/, "").trim().length > 0);
@@ -16663,8 +16952,8 @@ function formatSearchResults(result, query) {
 
 // src/relations.ts
 var import_promises2 = require("node:fs/promises");
-var import_node_path3 = require("node:path");
-var import_node_fs2 = require("node:fs");
+var import_node_path4 = require("node:path");
+var import_node_fs3 = require("node:fs");
 var CODE_EXTENSIONS2 = /* @__PURE__ */ new Set([
   ".js",
   ".jsx",
@@ -16793,10 +17082,10 @@ async function* walkDir2(dir, maxDepth = 20) {
   for (const entry of entries) {
     if (entry.name.startsWith(".") && entry.name !== ".") continue;
     if (IGNORE_DIRS2.has(entry.name)) continue;
-    const fullPath = (0, import_node_path3.join)(dir, entry.name);
+    const fullPath = (0, import_node_path4.join)(dir, entry.name);
     if (entry.isDirectory()) {
       yield* walkDir2(fullPath, maxDepth - 1);
-    } else if (entry.isFile() && CODE_EXTENSIONS2.has((0, import_node_path3.extname)(entry.name))) {
+    } else if (entry.isFile() && CODE_EXTENSIONS2.has((0, import_node_path4.extname)(entry.name))) {
       yield fullPath;
     }
   }
@@ -16815,7 +17104,7 @@ async function safeReadFile2(filePath) {
 async function collectProject(rootDir, filePattern) {
   const files = [];
   for await (const absolutePath of walkDir2(rootDir)) {
-    const relativePath = (0, import_node_path3.relative)(rootDir, absolutePath);
+    const relativePath = (0, import_node_path4.relative)(rootDir, absolutePath);
     if (filePattern && !relativePath.toLowerCase().includes(filePattern.toLowerCase())) continue;
     const content = await safeReadFile2(absolutePath);
     if (!content) continue;
@@ -16934,8 +17223,8 @@ function formatCallEdges(title, symbolName, edges, totalEdges) {
   return parts.join("\n");
 }
 async function relatedFiles(rootDir, filePath, options = {}) {
-  const absoluteTarget = (0, import_node_path3.resolve)(rootDir, filePath);
-  const targetRel = (0, import_node_path3.relative)(rootDir, absoluteTarget);
+  const absoluteTarget = (0, import_node_path4.resolve)(rootDir, filePath);
+  const targetRel = (0, import_node_path4.relative)(rootDir, absoluteTarget);
   const project = await collectProject(rootDir);
   const importsByFile = /* @__PURE__ */ new Map();
   for (const file of project.files) {
@@ -16965,15 +17254,15 @@ function extractImportSpecifiers(content) {
 }
 function resolveImport(rootDir, sourceRel, spec) {
   if (!spec.startsWith(".")) return null;
-  const base = (0, import_node_path3.resolve)(rootDir, (0, import_node_path3.dirname)(sourceRel), spec);
+  const base = (0, import_node_path4.resolve)(rootDir, (0, import_node_path4.dirname)(sourceRel), spec);
   const candidates = [
     base,
     ...[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"].map((ext) => base + ext),
     ...sourceEquivalentCandidates(base),
-    ...["index.ts", "index.tsx", "index.js", "index.jsx"].map((name) => (0, import_node_path3.join)(base, name))
+    ...["index.ts", "index.tsx", "index.js", "index.jsx"].map((name) => (0, import_node_path4.join)(base, name))
   ];
-  const found = candidates.find((candidate) => (0, import_node_fs2.existsSync)(candidate));
-  return found ? (0, import_node_path3.relative)(rootDir, found) : null;
+  const found = candidates.find((candidate) => (0, import_node_fs3.existsSync)(candidate));
+  return found ? (0, import_node_path4.relative)(rootDir, found) : null;
 }
 function sourceEquivalentCandidates(base) {
   if (base.endsWith(".js")) return [base.slice(0, -3) + ".ts", base.slice(0, -3) + ".tsx"];
@@ -17007,7 +17296,7 @@ function formatFileList(files, maxResults) {
 
 // src/mcp-server.ts
 var import_promises3 = require("node:fs/promises");
-var import_node_path4 = require("node:path");
+var import_node_path5 = require("node:path");
 var packageVersion = true ? "12.2.0" : "0.0.0-dev";
 var _log = (...args) => process.stderr.write(args.join(" ") + "\n");
 console["log"] = _log;
@@ -17049,7 +17338,7 @@ var tools = [
       required: ["query"]
     },
     handler: async (args) => {
-      const rootDir = (0, import_node_path4.resolve)(args.path || process.cwd());
+      const rootDir = (0, import_node_path5.resolve)(args.path || process.cwd());
       const excludePaths = Array.isArray(args.exclude_paths) ? args.exclude_paths : Array.isArray(args.exclude_dirs) ? args.exclude_dirs : void 0;
       const result = await searchCodebase(rootDir, args.query, {
         maxResults: args.max_results || 20,
@@ -17062,7 +17351,7 @@ var tools = [
   },
   {
     name: "smart_unfold",
-    description: "Expand a specific symbol (function, class, method) from a file. Returns the full source code of just that symbol. Use after smart_search or smart_outline to read specific code.",
+    description: "Expand a specific symbol (function, class, method) from a file, or read a section of a file by line number/anchor. Returns the full source code of just that symbol or section. Use after smart_search or smart_outline to read specific code. When symbol_name is omitted, reads a file section starting at offset (1-indexed) for limit lines. Pass anchor (LINE#HASH from outline output) to verify the file hasn't changed since the outline was generated.",
     inputSchema: {
       type: "object",
       properties: {
@@ -17072,14 +17361,48 @@ var tools = [
         },
         symbol_name: {
           type: "string",
-          description: "Name of the symbol to unfold (function, class, method, etc.)"
+          description: "Name of the symbol to unfold (function, class, method, etc.). Omit to read a file section by offset/anchor instead."
+        },
+        offset: {
+          type: "number",
+          description: "Starting line number (1-indexed, default 1). Only used when symbol_name is omitted."
+        },
+        limit: {
+          type: "number",
+          description: "Maximum lines to read (default 200). Start with a small limit and increase if needed. Only used when symbol_name is omitted."
+        },
+        anchor: {
+          type: "string",
+          description: `Line anchor from outline output (format: LINE#HASH, e.g. "41#SN"). Takes precedence over offset. Verifies the file hasn't changed since outline. Only used when symbol_name is omitted.`
         }
       },
-      required: ["file_path", "symbol_name"]
+      required: ["file_path"]
     },
     handler: async (args) => {
-      const filePath = (0, import_node_path4.resolve)(args.file_path);
+      const filePath = (0, import_node_path5.resolve)(args.file_path);
       const content = await (0, import_promises3.readFile)(filePath, "utf-8");
+      if (!args.symbol_name) {
+        try {
+          const section = readFileSection(
+            content,
+            filePath,
+            args.offset ?? 1,
+            args.limit ?? 200,
+            args.anchor
+          );
+          return { content: [{ type: "text", text: section }] };
+        } catch (error2) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: error2 instanceof Error ? error2.message : String(error2)
+              }
+            ],
+            isError: true
+          };
+        }
+      }
       const unfolded = unfoldSymbol(content, filePath, args.symbol_name);
       if (unfolded) {
         return { content: [{ type: "text", text: unfolded }] };
@@ -17123,7 +17446,7 @@ ${available}`
       required: ["file_path"]
     },
     handler: async (args) => {
-      const filePath = (0, import_node_path4.resolve)(args.file_path);
+      const filePath = (0, import_node_path5.resolve)(args.file_path);
       const target = await (0, import_promises3.stat)(filePath);
       if (target.isDirectory()) {
         const { files, truncated } = await collectSearchableFiles(filePath, {
@@ -17208,7 +17531,7 @@ ${available}`
       required: ["symbol_name"]
     },
     handler: async (args) => {
-      const rootDir = (0, import_node_path4.resolve)(args.path || process.cwd());
+      const rootDir = (0, import_node_path5.resolve)(args.path || process.cwd());
       const text = await findCallers(rootDir, args.symbol_name, {
         maxResults: args.max_results || 40,
         filePattern: args.file_pattern
@@ -17242,7 +17565,7 @@ ${available}`
       required: ["symbol_name"]
     },
     handler: async (args) => {
-      const rootDir = (0, import_node_path4.resolve)(args.path || process.cwd());
+      const rootDir = (0, import_node_path5.resolve)(args.path || process.cwd());
       const text = await findCallees(rootDir, args.symbol_name, {
         maxResults: args.max_results || 40,
         filePattern: args.file_pattern
@@ -17272,7 +17595,7 @@ ${available}`
       required: ["file_path"]
     },
     handler: async (args) => {
-      const rootDir = (0, import_node_path4.resolve)(args.path || process.cwd());
+      const rootDir = (0, import_node_path5.resolve)(args.path || process.cwd());
       const text = await relatedFiles(rootDir, args.file_path, { maxResults: args.max_results || 40 });
       return { content: [{ type: "text", text }] };
     }
@@ -17311,6 +17634,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 async function main() {
+  isHashlineEditEnabled();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write(`[mcp-server] smart-explore v${packageVersion} ready
