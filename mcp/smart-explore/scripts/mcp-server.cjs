@@ -2981,7 +2981,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve3.call(this, root, ref);
+      let _sch = resolve4.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -3008,7 +3008,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve3(root, ref) {
+    function resolve4(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -3639,55 +3639,55 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve3(baseURI, relativeURI, options) {
+    function resolve4(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
       return serialize(resolved, schemelessOptions);
     }
-    function resolveComponent(base, relative3, options, skipNormalization) {
+    function resolveComponent(base, relative4, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
         base = parse3(serialize(base, options), options);
-        relative3 = parse3(serialize(relative3, options), options);
+        relative4 = parse3(serialize(relative4, options), options);
       }
       options = options || {};
-      if (!options.tolerant && relative3.scheme) {
-        target.scheme = relative3.scheme;
-        target.userinfo = relative3.userinfo;
-        target.host = relative3.host;
-        target.port = relative3.port;
-        target.path = removeDotSegments(relative3.path || "");
-        target.query = relative3.query;
+      if (!options.tolerant && relative4.scheme) {
+        target.scheme = relative4.scheme;
+        target.userinfo = relative4.userinfo;
+        target.host = relative4.host;
+        target.port = relative4.port;
+        target.path = removeDotSegments(relative4.path || "");
+        target.query = relative4.query;
       } else {
-        if (relative3.userinfo !== void 0 || relative3.host !== void 0 || relative3.port !== void 0) {
-          target.userinfo = relative3.userinfo;
-          target.host = relative3.host;
-          target.port = relative3.port;
-          target.path = removeDotSegments(relative3.path || "");
-          target.query = relative3.query;
+        if (relative4.userinfo !== void 0 || relative4.host !== void 0 || relative4.port !== void 0) {
+          target.userinfo = relative4.userinfo;
+          target.host = relative4.host;
+          target.port = relative4.port;
+          target.path = removeDotSegments(relative4.path || "");
+          target.query = relative4.query;
         } else {
-          if (!relative3.path) {
+          if (!relative4.path) {
             target.path = base.path;
-            if (relative3.query !== void 0) {
-              target.query = relative3.query;
+            if (relative4.query !== void 0) {
+              target.query = relative4.query;
             } else {
               target.query = base.query;
             }
           } else {
-            if (relative3.path[0] === "/") {
-              target.path = removeDotSegments(relative3.path);
+            if (relative4.path[0] === "/") {
+              target.path = removeDotSegments(relative4.path);
             } else {
               if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
-                target.path = "/" + relative3.path;
+                target.path = "/" + relative4.path;
               } else if (!base.path) {
-                target.path = relative3.path;
+                target.path = relative4.path;
               } else {
-                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative3.path;
+                target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative4.path;
               }
               target.path = removeDotSegments(target.path);
             }
-            target.query = relative3.query;
+            target.query = relative4.query;
           }
           target.userinfo = base.userinfo;
           target.host = base.host;
@@ -3695,7 +3695,7 @@ var require_fast_uri = __commonJS({
         }
         target.scheme = base.scheme;
       }
-      target.fragment = relative3.fragment;
+      target.fragment = relative4.fragment;
       return target;
     }
     function equal(uriA, uriB, options) {
@@ -3897,7 +3897,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve: resolve3,
+      resolve: resolve4,
       resolveComponent,
       equal,
       serialize,
@@ -14204,7 +14204,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+        await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error2) {
@@ -14221,7 +14221,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const earlyReject = (error2) => {
         reject(error2);
       };
@@ -14299,7 +14299,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve3(parseResult.data);
+            resolve4(parseResult.data);
           }
         } catch (error2) {
           reject(error2);
@@ -14560,12 +14560,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve3, interval);
+      const timeoutId = setTimeout(resolve4, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -15435,12 +15435,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve3) => {
+    return new Promise((resolve4) => {
       const json = serializeMessage(message);
       if (this._stdout.write(json)) {
-        resolve3();
+        resolve4();
       } else {
-        this._stdout.once("drain", resolve3);
+        this._stdout.once("drain", resolve4);
       }
     });
   }
@@ -15542,14 +15542,6 @@ function formatHashLine(lineNumber, content) {
 }
 function lineAnchor(lineNumber, content) {
   return `${lineNumber}#${computeLineHash(lineNumber, content)}`;
-}
-function parseAnchor(anchor) {
-  const match = anchor.match(/^(\d+)#([A-Z]{2})$/);
-  if (!match) return null;
-  return { lineNumber: parseInt(match[1], 10), hash: match[2] };
-}
-function verifyLineAnchor(lineNumber, content, expectedHash) {
-  return computeLineHash(lineNumber, content) === expectedHash;
 }
 var cachedEnabled = null;
 function stripJsonComments(text) {
@@ -15717,13 +15709,13 @@ function loadUserGrammars(projectRoot) {
     if (GRAMMAR_PACKAGES[language]) continue;
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
     const typedEntry = entry;
-    const pkg = typedEntry.package;
+    const pkg2 = typedEntry.package;
     const extensions = typedEntry.extensions;
     const queryPath = typedEntry.query;
-    if (typeof pkg !== "string" || !Array.isArray(extensions)) continue;
+    if (typeof pkg2 !== "string" || !Array.isArray(extensions)) continue;
     if (!extensions.every((e) => typeof e === "string")) continue;
     config2.grammars[language] = {
-      package: pkg,
+      package: pkg2,
       extensions,
       query: typeof queryPath === "string" ? queryPath : void 0
     };
@@ -15782,12 +15774,12 @@ var GRAMMAR_SUBDIR = {
   markdown: "tree-sitter-markdown"
 };
 function resolveGrammarPath(language) {
-  const pkg = GRAMMAR_PACKAGES[language];
-  if (!pkg) return null;
+  const pkg2 = GRAMMAR_PACKAGES[language];
+  if (!pkg2) return null;
   const subdir = GRAMMAR_SUBDIR[language];
   if (subdir) {
     try {
-      const rootPkgPath = _require.resolve(pkg + "/package.json");
+      const rootPkgPath = _require.resolve(pkg2 + "/package.json");
       const resolved = (0, import_node_path2.join)((0, import_node_path2.dirname)(rootPkgPath), subdir);
       if ((0, import_node_fs2.existsSync)((0, import_node_path2.join)(resolved, "src"))) return resolved;
     } catch {
@@ -15795,7 +15787,7 @@ function resolveGrammarPath(language) {
     return null;
   }
   try {
-    const packageJsonPath = _require.resolve(pkg + "/package.json");
+    const packageJsonPath = _require.resolve(pkg2 + "/package.json");
     return (0, import_node_path2.dirname)(packageJsonPath);
   } catch {
     return null;
@@ -16540,8 +16532,7 @@ function getSymbolIcon(kind) {
   };
   return icons[kind] || "\xB7";
 }
-function unfoldSymbol(content, filePath, symbolName) {
-  const file = parseFile(content, filePath);
+function unfoldSymbolFromFolded(content, filePath, file, symbolName) {
   const findSymbol = (symbols) => {
     for (const sym of symbols) {
       if (sym.name === symbolName) return sym;
@@ -16596,44 +16587,6 @@ ${slice2.join("\n")}`;
 ${hashlined.join("\n")}`;
   }
   return `// \u{1F4CD} ${filePath} L${start + 1}-${symbol.lineEnd + 1}
-${slice.join("\n")}`;
-}
-function readFileSection(content, filePath, offset = 1, limit = 200, anchor) {
-  const lines = content.split("\n");
-  const totalLines = lines.length;
-  let startLine = Math.max(1, offset);
-  if (anchor) {
-    const parsed = parseAnchor(anchor);
-    if (!parsed) {
-      throw new Error(`Invalid anchor format: "${anchor}". Expected format: LINE#HASH (e.g. "41#SN").`);
-    }
-    startLine = parsed.lineNumber;
-    if (startLine < 1 || startLine > totalLines) {
-      throw new Error(
-        `Anchor line ${startLine} is out of range (file has ${totalLines} lines). File may have changed \u2014 re-run smart_outline.`
-      );
-    }
-    const lineContent = (lines[startLine - 1] ?? "").replace(/\r$/, "");
-    if (!verifyLineAnchor(startLine, lineContent, parsed.hash)) {
-      throw new Error(
-        `Anchor "${anchor}" does not match current file content. File has changed since outline was generated \u2014 re-run smart_outline.`
-      );
-    }
-  }
-  const effectiveLimit = limit > 0 ? limit : 200;
-  const startIdx = Math.max(0, startLine - 1);
-  const endIdx = Math.min(totalLines, startIdx + effectiveLimit);
-  const slice = lines.slice(startIdx, endIdx);
-  const endLine = startLine + slice.length - 1;
-  if (slice.length === 0) {
-    return `// \u{1F4CD} ${filePath} L${startLine}-${startLine} (empty \u2014 offset beyond end of ${totalLines}-line file)`;
-  }
-  if (isHashlineEditEnabled()) {
-    const hashlined = slice.map((ln, i) => formatHashLine(startLine + i, ln.replace(/\r$/, "")));
-    return `// \u{1F4CD} ${filePath}
-${hashlined.join("\n")}`;
-  }
-  return `// \u{1F4CD} ${filePath} L${startLine}-${endLine}
 ${slice.join("\n")}`;
 }
 
@@ -16704,7 +16657,21 @@ var IGNORE_DIRS = /* @__PURE__ */ new Set([
   "coverage",
   ".nyc_output",
   ".claude",
-  ".smart-file-read"
+  ".smart-file-read",
+  ".smart-explore-mcp-cache"
+]);
+var IGNORE_FILES = /* @__PURE__ */ new Set([
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "yarn.lock",
+  "Cargo.lock",
+  "poetry.lock",
+  "composer.lock",
+  "Gemfile.lock",
+  "go.sum",
+  "flake.lock",
+  "gradle.lockfile",
+  "maven.lock"
 ]);
 var MAX_FILE_SIZE = 512 * 1024;
 async function* walkDir(dir, rootDir, maxDepth = 20, extraExtensions, excludedPaths = /* @__PURE__ */ new Set()) {
@@ -16719,6 +16686,7 @@ async function* walkDir(dir, rootDir, maxDepth = 20, extraExtensions, excludedPa
   for (const entry of entries) {
     if (entry.name.startsWith(".") && entry.name !== ".") continue;
     if (IGNORE_DIRS.has(entry.name)) continue;
+    if (IGNORE_FILES.has(entry.name)) continue;
     const fullPath = (0, import_node_path3.join)(dir, entry.name);
     if (entry.isDirectory()) {
       const relDirPath = normalizeRelativePath((0, import_node_path3.relative)(rootDir, fullPath));
@@ -16801,158 +16769,302 @@ async function collectSearchableFiles(rootDir, options = {}) {
   files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   return { files, truncated };
 }
-async function searchCodebase(rootDir, query, options = {}) {
-  const maxResults = options.maxResults || 20;
-  const queryLower = query.toLowerCase();
-  const queryParts = queryLower.split(/[\s_\-./]+/).filter((p) => p.length > 0);
-  const projectRoot = options.projectRoot || rootDir;
-  const { files: filesToParse } = await collectSearchableFiles(rootDir, {
-    filePattern: options.filePattern,
-    projectRoot,
-    excludePaths: options.excludePaths
-  });
-  const parsedFiles = parseFilesBatch(filesToParse, projectRoot);
-  const foldedFiles = [];
-  const matchingSymbols = [];
-  let totalSymbolsFound = 0;
-  for (const [relPath, parsed] of parsedFiles) {
-    totalSymbolsFound += countSymbols(parsed);
-    const pathMatch = matchScore(relPath.toLowerCase(), queryParts);
-    let fileHasMatch = pathMatch > 0;
-    const fileSymbolMatches = [];
-    const checkSymbols = (symbols, parent) => {
-      for (const sym of symbols) {
-        let score = 0;
-        let reason = "";
-        const nameScore = matchScore(sym.name.toLowerCase(), queryParts);
-        if (nameScore > 0) {
-          score += nameScore * 3;
-          reason = "name match";
-        }
-        if (sym.signature.toLowerCase().includes(queryLower)) {
-          score += 2;
-          reason = reason ? `${reason} + signature` : "signature match";
-        }
-        if (sym.jsdoc && sym.jsdoc.toLowerCase().includes(queryLower)) {
-          score += 1;
-          reason = reason ? `${reason} + jsdoc` : "jsdoc match";
-        }
-        if (score > 0) {
-          fileHasMatch = true;
-          fileSymbolMatches.push({
-            filePath: relPath,
-            symbolName: parent ? `${parent}.${sym.name}` : sym.name,
-            kind: sym.kind,
-            signature: sym.signature,
-            jsdoc: sym.jsdoc,
-            lineStart: sym.lineStart,
-            lineEnd: sym.lineEnd,
-            matchReason: reason,
-            hashStart: sym.hashStart,
-            hashEnd: sym.hashEnd
-          });
-        }
-        if (sym.children) {
-          checkSymbols(sym.children, sym.name);
-        }
-      }
-    };
-    checkSymbols(parsed.symbols);
-    if (fileHasMatch) {
-      foldedFiles.push(parsed);
-      matchingSymbols.push(...fileSymbolMatches);
-    }
-  }
-  matchingSymbols.sort((a, b) => {
-    const aScore = matchScore(a.symbolName.toLowerCase(), queryParts);
-    const bScore = matchScore(b.symbolName.toLowerCase(), queryParts);
-    return bScore - aScore;
-  });
-  const trimmedSymbols = matchingSymbols.slice(0, maxResults);
-  const relevantFiles = new Set(trimmedSymbols.map((s) => s.filePath));
-  const trimmedFiles = foldedFiles.filter((f) => relevantFiles.has(f.filePath)).slice(0, maxResults);
-  const tokenEstimate = trimmedFiles.reduce((sum, f) => sum + f.foldedTokenEstimate, 0);
-  return {
-    foldedFiles: trimmedFiles,
-    matchingSymbols: trimmedSymbols,
-    totalFilesScanned: filesToParse.length,
-    totalSymbolsFound,
-    tokenEstimate
-  };
-}
-function matchScore(text, queryParts) {
-  let score = 0;
-  for (const part of queryParts) {
-    if (text === part) {
-      score += 10;
-    } else if (text.includes(part)) {
-      score += 5;
-    } else {
-      let ti = 0;
-      let matched = 0;
-      for (const ch of part) {
-        const idx = text.indexOf(ch, ti);
-        if (idx !== -1) {
-          matched++;
-          ti = idx + 1;
-        }
-      }
-      if (matched === part.length) {
-        score += 1;
-      }
-    }
-  }
-  return score;
-}
-function countSymbols(file) {
-  let count = file.symbols.length;
-  for (const sym of file.symbols) {
-    if (sym.children) count += sym.children.length;
-  }
-  return count;
-}
-function formatSearchResults(result, query) {
+var SYMBOL_ICONS = {
+  function: "\u0192",
+  method: "\u0192",
+  class: "\u25C6",
+  interface: "\u25C7",
+  type: "\u25C7",
+  const: "\u25CF",
+  variable: "\u25CB",
+  export: "\u2192",
+  struct: "\u25C6",
+  enum: "\u25A3",
+  trait: "\u25C7",
+  impl: "\u25C8",
+  property: "\u25CB",
+  getter: "\u21E2",
+  setter: "\u21E0",
+  mixin: "\u25C8",
+  section: "\xA7",
+  code: "\u2318",
+  text: "\xB6",
+  metadata: "\u25CA",
+  reference: "\u2197"
+};
+function formatSearchResults(query, rows, hasEmbedding) {
   const parts = [];
+  const mode = hasEmbedding ? "hybrid (vector + BM25)" : "BM25";
   parts.push(`\u{1F50D} Smart Search: "${query}"`);
-  parts.push(`   Scanned ${result.totalFilesScanned} files, found ${result.totalSymbolsFound} symbols`);
-  parts.push(`   ${result.matchingSymbols.length} matches across ${result.foldedFiles.length} files (~${result.tokenEstimate} tokens for folded view)`);
+  parts.push(`   ${rows.length} matches (${mode} search)`);
   parts.push("");
-  if (result.matchingSymbols.length === 0) {
-    parts.push("   No matching symbols found.");
+  if (rows.length === 0) {
+    parts.push("   No matches found.");
+    parts.push("");
+    parts.push("   Try smart_index to rebuild the index, or smart_outline to browse files.");
     return parts.join("\n");
   }
-  parts.push("\u2500\u2500 Matching Symbols \u2500\u2500");
+  parts.push("\u2500\u2500 Results by File \u2500\u2500");
   parts.push("");
-  for (const match of result.matchingSymbols) {
-    const anchor = match.hashStart ? match.hashEnd && match.hashEnd !== match.hashStart ? `${match.hashStart}-${match.hashEnd}` : match.hashStart : "";
-    if (anchor) {
-      parts.push(`  ${match.kind} ${match.symbolName} (${match.filePath} ${anchor})`);
-    } else {
-      parts.push(`  ${match.kind} ${match.symbolName} (${match.filePath}:${match.lineStart + 1})`);
-    }
-    parts.push(`    ${match.signature}`);
-    if (match.jsdoc) {
-      const firstLine = match.jsdoc.split("\n").find((l) => l.replace(/^[\s*/]+/, "").trim().length > 0);
-      if (firstLine) {
-        parts.push(`    \u{1F4AC} ${firstLine.replace(/^[\s*/]+/, "").trim()}`);
+  const byFile = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const list = byFile.get(row.file_path) ?? [];
+    list.push(row);
+    byFile.set(row.file_path, list);
+  }
+  const sortedFiles = [...byFile.entries()].sort((a, b) => {
+    if (b[1].length !== a[1].length) return b[1].length - a[1].length;
+    return a[0].localeCompare(b[0]);
+  });
+  for (const [, fileRows] of sortedFiles) {
+    fileRows.sort((a, b) => a.line_start - b.line_start);
+  }
+  for (const [filePath, fileRows] of sortedFiles) {
+    const lang = fileRows[0].language || "text";
+    parts.push(`\u{1F4C1} ${filePath} (${lang}, ${fileRows.length} match${fileRows.length > 1 ? "es" : ""})`);
+    for (const row of fileRows) {
+      const icon = SYMBOL_ICONS[row.kind] || "\xB7";
+      const range = row.line_start === row.line_end ? `L${row.line_start + 1}` : `L${row.line_start + 1}-L${row.line_end + 1}`;
+      const anchor = row.hash_start || range;
+      const name = row.symbol_name || "(text chunk)";
+      parts.push(`  ${icon} ${name} ${anchor}`);
+      const contentLines = row.content.split("\n").slice(0, 8);
+      for (const line of contentLines) {
+        const trimmed = line.replace(/\s+$/, "");
+        if (trimmed.length > 0) parts.push(`    ${trimmed.slice(0, 120)}`);
+      }
+      if (row.content.split("\n").length > 8) {
+        parts.push("    ...");
       }
     }
-    parts.push("");
-  }
-  parts.push("\u2500\u2500 Folded File Views \u2500\u2500");
-  parts.push("");
-  for (const file of result.foldedFiles) {
-    parts.push(formatFoldedView(file));
     parts.push("");
   }
   parts.push("\u2500\u2500 Actions \u2500\u2500");
-  parts.push("  To see full implementation: use smart_unfold with file path and symbol name");
+  parts.push("  To see full code: use smart_unfold with file_path and symbol_name");
+  parts.push("  To see file structure: use smart_outline with file_path");
+  parts.push("  To reindex: use smart_index");
   return parts.join("\n");
 }
 
-// src/relations.ts
+// src/outline-cache.ts
 var import_promises2 = require("node:fs/promises");
 var import_node_path4 = require("node:path");
+var outlineCache = /* @__PURE__ */ new Map();
+var loadedCacheRoots = /* @__PURE__ */ new Set();
+var MAX_CACHE_SIZE = 5e3;
+var CACHE_DIR = ".smart-explore-mcp-cache";
+var CACHE_FILE = "outline-cache.json";
+async function getDirectoryOutline(dirPath, maxFiles) {
+  return buildDirectoryOutline((0, import_node_path4.resolve)(dirPath), maxFiles, true);
+}
+async function warmDirectoryOutlineCache(projectRoot, maxFiles = MAX_CACHE_SIZE) {
+  const result = await buildDirectoryOutline((0, import_node_path4.resolve)(projectRoot), maxFiles, false);
+  return {
+    truncated: result.truncated,
+    skipped: result.skipped,
+    cached: result.cached,
+    parsed: result.parsed
+  };
+}
+async function getFileOutline(filePath) {
+  const absolutePath = (0, import_node_path4.resolve)(filePath);
+  const cacheRoot = await findCacheRoot(absolutePath);
+  await loadDiskCache(cacheRoot);
+  const stats = await (0, import_promises2.stat)(absolutePath);
+  const content = await (0, import_promises2.readFile)(absolutePath, "utf-8");
+  const cacheEntry = outlineCache.get(absolutePath);
+  if (cacheEntry && cacheEntry.mtime === stats.mtimeMs && cacheEntry.size === stats.size) {
+    return { content, foldedFile: cacheEntry.foldedFile, cached: true };
+  }
+  const relPath = normalizeRelativePath((0, import_node_path4.relative)(cacheRoot, absolutePath));
+  const parsedResults = parseFilesBatch([{ absolutePath, relativePath: relPath, content }], cacheRoot);
+  const foldedFile = parsedResults.get(relPath) ?? {
+    filePath: relPath,
+    language: "text",
+    symbols: [],
+    imports: [],
+    totalLines: content.split("\n").length,
+    foldedTokenEstimate: 0
+  };
+  evictIfNeeded();
+  outlineCache.set(absolutePath, {
+    cacheRoot,
+    mtime: stats.mtimeMs,
+    size: stats.size,
+    foldedFile
+  });
+  await saveDiskCache(cacheRoot);
+  return { content, foldedFile, cached: false };
+}
+async function buildDirectoryOutline(dirPath, maxFiles, includeOutlines) {
+  const cacheRoot = await findCacheRoot(dirPath);
+  await loadDiskCache(cacheRoot);
+  const userConfig = loadUserGrammars(cacheRoot);
+  const extraExtensions = /* @__PURE__ */ new Set();
+  for (const entry of Object.values(userConfig.grammars)) {
+    for (const ext of entry.extensions) {
+      extraExtensions.add(ext);
+    }
+  }
+  const filePaths = [];
+  let truncated = false;
+  for await (const filePath of walkDir(
+    dirPath,
+    cacheRoot,
+    20,
+    extraExtensions.size > 0 ? extraExtensions : void 0
+  )) {
+    filePaths.push(filePath);
+    if (filePaths.length >= maxFiles) {
+      truncated = true;
+      break;
+    }
+  }
+  filePaths.sort((a, b) => (0, import_node_path4.relative)(dirPath, a).localeCompare((0, import_node_path4.relative)(dirPath, b)));
+  const foldedFiles = [];
+  let skipped = 0;
+  let cached2 = 0;
+  let parsed = 0;
+  const toParse = [];
+  for (const absPath of filePaths) {
+    let stats;
+    try {
+      stats = await (0, import_promises2.stat)(absPath);
+    } catch {
+      skipped++;
+      continue;
+    }
+    const relPath = normalizeRelativePath((0, import_node_path4.relative)(cacheRoot, absPath));
+    const cacheEntry = outlineCache.get(absPath);
+    if (cacheEntry && cacheEntry.mtime === stats.mtimeMs && cacheEntry.size === stats.size) {
+      if (cacheEntry.foldedFile.symbols.length > 0) {
+        foldedFiles.push({ absolutePath: absPath, foldedFile: cacheEntry.foldedFile });
+      } else {
+        skipped++;
+      }
+      cached2++;
+      continue;
+    }
+    try {
+      const content = await (0, import_promises2.readFile)(absPath, "utf-8");
+      toParse.push({
+        absolutePath: absPath,
+        relativePath: relPath,
+        content,
+        mtime: stats.mtimeMs,
+        size: stats.size
+      });
+    } catch {
+      skipped++;
+    }
+  }
+  if (toParse.length > 0) {
+    const parsedResults = parseFilesBatch(
+      toParse.map((f) => ({
+        absolutePath: f.absolutePath,
+        relativePath: f.relativePath,
+        content: f.content
+      })),
+      cacheRoot
+    );
+    for (const file of toParse) {
+      const foldedFile = parsedResults.get(file.relativePath);
+      if (!foldedFile || foldedFile.symbols.length === 0) {
+        skipped++;
+        continue;
+      }
+      evictIfNeeded();
+      outlineCache.set(file.absolutePath, {
+        cacheRoot,
+        mtime: file.mtime,
+        size: file.size,
+        foldedFile
+      });
+      foldedFiles.push({ absolutePath: file.absolutePath, foldedFile });
+      parsed++;
+    }
+    await saveDiskCache(cacheRoot);
+  }
+  foldedFiles.sort((a, b) => a.foldedFile.filePath.localeCompare(b.foldedFile.filePath));
+  const outlines = includeOutlines ? foldedFiles.map(
+    ({ absolutePath, foldedFile }) => formatFoldedView(rebaseFoldedFile(foldedFile, dirPath, absolutePath))
+  ) : [];
+  return { outlines, truncated, skipped, cached: cached2, parsed };
+}
+async function findCacheRoot(startPath) {
+  let current = startPath;
+  try {
+    const stats = await (0, import_promises2.stat)(current);
+    if (!stats.isDirectory()) current = (0, import_node_path4.dirname)(current);
+  } catch {
+    current = (0, import_node_path4.dirname)(current);
+  }
+  while (true) {
+    try {
+      await (0, import_promises2.stat)((0, import_node_path4.join)(current, ".git"));
+      return current;
+    } catch {
+      const parent = (0, import_node_path4.dirname)(current);
+      if (parent === current) return startPath;
+      current = parent;
+    }
+  }
+}
+async function loadDiskCache(cacheRoot) {
+  if (loadedCacheRoots.has(cacheRoot)) return;
+  loadedCacheRoots.add(cacheRoot);
+  try {
+    const raw = await (0, import_promises2.readFile)(cachePath(cacheRoot), "utf-8");
+    const data = JSON.parse(raw);
+    if (data.version !== 1 || !data.entries) return;
+    for (const [relPath, entry] of Object.entries(data.entries)) {
+      const absolutePath = (0, import_node_path4.join)(cacheRoot, relPath);
+      outlineCache.set(absolutePath, {
+        cacheRoot,
+        mtime: entry.mtime,
+        size: entry.size,
+        foldedFile: entry.foldedFile
+      });
+    }
+  } catch {
+  }
+}
+async function saveDiskCache(cacheRoot) {
+  const entries = {};
+  for (const [absolutePath, entry] of outlineCache) {
+    if (entry.cacheRoot !== cacheRoot) continue;
+    const relPath = normalizeRelativePath((0, import_node_path4.relative)(cacheRoot, absolutePath));
+    entries[relPath] = {
+      mtime: entry.mtime,
+      size: entry.size,
+      foldedFile: entry.foldedFile
+    };
+  }
+  const dir = (0, import_node_path4.join)(cacheRoot, CACHE_DIR);
+  await (0, import_promises2.mkdir)(dir, { recursive: true });
+  const target = (0, import_node_path4.join)(dir, CACHE_FILE);
+  const temp = `${target}.tmp`;
+  await (0, import_promises2.writeFile)(temp, JSON.stringify({ version: 1, entries }));
+  await (0, import_promises2.rename)(temp, target);
+}
+function cachePath(cacheRoot) {
+  return (0, import_node_path4.join)(cacheRoot, CACHE_DIR, CACHE_FILE);
+}
+function rebaseFoldedFile(foldedFile, displayRoot, absolutePath) {
+  return {
+    ...foldedFile,
+    filePath: normalizeRelativePath((0, import_node_path4.relative)(displayRoot, absolutePath))
+  };
+}
+function evictIfNeeded() {
+  if (outlineCache.size < MAX_CACHE_SIZE) return;
+  const firstKey = outlineCache.keys().next().value;
+  if (firstKey) outlineCache.delete(firstKey);
+}
+
+// src/relations.ts
+var import_promises3 = require("node:fs/promises");
+var import_node_path5 = require("node:path");
 var import_node_fs3 = require("node:fs");
 var CODE_EXTENSIONS2 = /* @__PURE__ */ new Set([
   ".js",
@@ -17075,26 +17187,26 @@ async function* walkDir2(dir, maxDepth = 20) {
   if (maxDepth <= 0) return;
   let entries;
   try {
-    entries = await (0, import_promises2.readdir)(dir, { withFileTypes: true });
+    entries = await (0, import_promises3.readdir)(dir, { withFileTypes: true });
   } catch {
     return;
   }
   for (const entry of entries) {
     if (entry.name.startsWith(".") && entry.name !== ".") continue;
     if (IGNORE_DIRS2.has(entry.name)) continue;
-    const fullPath = (0, import_node_path4.join)(dir, entry.name);
+    const fullPath = (0, import_node_path5.join)(dir, entry.name);
     if (entry.isDirectory()) {
       yield* walkDir2(fullPath, maxDepth - 1);
-    } else if (entry.isFile() && CODE_EXTENSIONS2.has((0, import_node_path4.extname)(entry.name))) {
+    } else if (entry.isFile() && CODE_EXTENSIONS2.has((0, import_node_path5.extname)(entry.name))) {
       yield fullPath;
     }
   }
 }
 async function safeReadFile2(filePath) {
   try {
-    const stats = await (0, import_promises2.stat)(filePath);
+    const stats = await (0, import_promises3.stat)(filePath);
     if (stats.size === 0 || stats.size > MAX_FILE_SIZE2) return null;
-    const content = await (0, import_promises2.readFile)(filePath, "utf-8");
+    const content = await (0, import_promises3.readFile)(filePath, "utf-8");
     if (content.slice(0, 1e3).includes("\0")) return null;
     return content;
   } catch {
@@ -17104,7 +17216,7 @@ async function safeReadFile2(filePath) {
 async function collectProject(rootDir, filePattern) {
   const files = [];
   for await (const absolutePath of walkDir2(rootDir)) {
-    const relativePath = (0, import_node_path4.relative)(rootDir, absolutePath);
+    const relativePath = (0, import_node_path5.relative)(rootDir, absolutePath);
     if (filePattern && !relativePath.toLowerCase().includes(filePattern.toLowerCase())) continue;
     const content = await safeReadFile2(absolutePath);
     if (!content) continue;
@@ -17223,8 +17335,8 @@ function formatCallEdges(title, symbolName, edges, totalEdges) {
   return parts.join("\n");
 }
 async function relatedFiles(rootDir, filePath, options = {}) {
-  const absoluteTarget = (0, import_node_path4.resolve)(rootDir, filePath);
-  const targetRel = (0, import_node_path4.relative)(rootDir, absoluteTarget);
+  const absoluteTarget = (0, import_node_path5.resolve)(rootDir, filePath);
+  const targetRel = (0, import_node_path5.relative)(rootDir, absoluteTarget);
   const project = await collectProject(rootDir);
   const importsByFile = /* @__PURE__ */ new Map();
   for (const file of project.files) {
@@ -17254,15 +17366,15 @@ function extractImportSpecifiers(content) {
 }
 function resolveImport(rootDir, sourceRel, spec) {
   if (!spec.startsWith(".")) return null;
-  const base = (0, import_node_path4.resolve)(rootDir, (0, import_node_path4.dirname)(sourceRel), spec);
+  const base = (0, import_node_path5.resolve)(rootDir, (0, import_node_path5.dirname)(sourceRel), spec);
   const candidates = [
     base,
     ...[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"].map((ext) => base + ext),
     ...sourceEquivalentCandidates(base),
-    ...["index.ts", "index.tsx", "index.js", "index.jsx"].map((name) => (0, import_node_path4.join)(base, name))
+    ...["index.ts", "index.tsx", "index.js", "index.jsx"].map((name) => (0, import_node_path5.join)(base, name))
   ];
   const found = candidates.find((candidate) => (0, import_node_fs3.existsSync)(candidate));
-  return found ? (0, import_node_path4.relative)(rootDir, found) : null;
+  return found ? (0, import_node_path5.relative)(rootDir, found) : null;
 }
 function sourceEquivalentCandidates(base) {
   if (base.endsWith(".js")) return [base.slice(0, -3) + ".ts", base.slice(0, -3) + ".tsx"];
@@ -17294,9 +17406,737 @@ function formatFileList(files, maxResults) {
   return shown;
 }
 
+// src/index-store.ts
+var import_lancedb = __toESM(require("@lancedb/lancedb"), 1);
+var import_node_path7 = require("node:path");
+var import_node_fs5 = require("node:fs");
+var import_node_crypto = require("node:crypto");
+
+// src/embed.ts
+var import_embedding = require("@lancedb/lancedb/embedding");
+var import_apache_arrow = require("apache-arrow");
+
+// src/config.ts
+var import_node_fs4 = require("node:fs");
+var import_node_path6 = require("node:path");
+var import_node_os3 = require("node:os");
+var DEFAULT_QUERY_PROMPT = "Instruct: Given a coding question, retrieve relevant code or docs.\nQuery: ";
+var DEFAULT_MAX_BATCH_SIZE = 64;
+var DEFAULT_MAX_CONCURRENCY = 4;
+var configCache = /* @__PURE__ */ new Map();
+function resolveUserConfigPath() {
+  const xdg = process.env.XDG_CONFIG_HOME?.trim() || (0, import_node_path6.join)((0, import_node_os3.homedir)(), ".config");
+  return (0, import_node_path6.join)(xdg, "opencode", "smart-explore-config.json");
+}
+function validateConfig(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const root = raw;
+  const emb = root.embedding;
+  if (!emb || typeof emb !== "object" || Array.isArray(emb)) return null;
+  const e = emb;
+  if (typeof e.baseUrl !== "string" || !e.baseUrl.trim()) return null;
+  if (typeof e.model !== "string" || !e.model.trim()) return null;
+  if (typeof e.dim !== "number" || !Number.isInteger(e.dim) || e.dim <= 0) return null;
+  return {
+    baseUrl: e.baseUrl.trim(),
+    model: e.model.trim(),
+    dim: e.dim,
+    queryPrompt: typeof e.queryPrompt === "string" ? e.queryPrompt : DEFAULT_QUERY_PROMPT,
+    maxBatchSize: typeof e.maxBatchSize === "number" && e.maxBatchSize > 0 ? e.maxBatchSize : DEFAULT_MAX_BATCH_SIZE,
+    maxConcurrency: typeof e.maxConcurrency === "number" && e.maxConcurrency > 0 ? e.maxConcurrency : DEFAULT_MAX_CONCURRENCY
+  };
+}
+function loadEmbeddingConfig(projectRoot) {
+  const cacheKey = projectRoot || "<global>";
+  if (configCache.has(cacheKey)) return configCache.get(cacheKey);
+  if (projectRoot) {
+    const projectConfigPath = (0, import_node_path6.join)(projectRoot, ".smart-explore.json");
+    if ((0, import_node_fs4.existsSync)(projectConfigPath)) {
+      try {
+        const raw = JSON.parse((0, import_node_fs4.readFileSync)(projectConfigPath, "utf-8"));
+        const config2 = validateConfig(raw);
+        if (config2) {
+          configCache.set(cacheKey, config2);
+          return config2;
+        }
+      } catch {
+      }
+    }
+  }
+  const userConfigPath = resolveUserConfigPath();
+  if ((0, import_node_fs4.existsSync)(userConfigPath)) {
+    try {
+      const raw = JSON.parse((0, import_node_fs4.readFileSync)(userConfigPath, "utf-8"));
+      const config2 = validateConfig(raw);
+      if (config2) {
+        configCache.set(cacheKey, config2);
+        return config2;
+      }
+    } catch {
+    }
+  }
+  configCache.set(cacheKey, null);
+  return null;
+}
+
+// src/embed.ts
+var DEFAULT_QUERY_PROMPT2 = "Instruct: Given a coding question, retrieve relevant code or docs.\nQuery: ";
+var DEFAULT_MAX_BATCH_SIZE2 = 64;
+var DEFAULT_MAX_CONCURRENCY2 = 4;
+var F2LLMEmbeddingFunction = class extends import_embedding.TextEmbeddingFunction {
+  #baseUrl;
+  #model;
+  #dim;
+  #queryPrompt;
+  #maxBatchSize;
+  #maxConcurrency;
+  constructor(optionsRaw) {
+    super();
+    const options = this.resolveVariables(optionsRaw ?? {});
+    this.#baseUrl = options.baseUrl ?? "";
+    this.#model = options.model ?? "";
+    this.#dim = options.dim ?? 0;
+    this.#queryPrompt = options.queryPrompt ?? DEFAULT_QUERY_PROMPT2;
+    this.#maxBatchSize = options.maxBatchSize ?? DEFAULT_MAX_BATCH_SIZE2;
+    this.#maxConcurrency = options.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY2;
+  }
+  ndims() {
+    return this.#dim;
+  }
+  embeddingDataType() {
+    return new import_apache_arrow.Float32();
+  }
+  async #embedBatch(texts, mode) {
+    if (texts.length === 0) return [];
+    const inputs = mode === "query" ? texts.map((t) => this.#queryPrompt + t) : texts;
+    const batches = [];
+    const allResults = new Array(inputs.length);
+    for (let i = 0; i < inputs.length; i += this.#maxBatchSize) {
+      batches.push({ offset: i, texts: inputs.slice(i, i + this.#maxBatchSize) });
+    }
+    let nextBatch = 0;
+    const workers = Array.from({ length: Math.min(this.#maxConcurrency, batches.length) }, async () => {
+      while (nextBatch < batches.length) {
+        const batch = batches[nextBatch++];
+        const resp = await fetch(`${this.#baseUrl}/embeddings`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: this.#model, input: batch.texts })
+        });
+        if (!resp.ok) {
+          const body = await resp.text().catch(() => "");
+          throw new Error(`Embedding HTTP ${resp.status}: ${body}`);
+        }
+        const data = await resp.json();
+        for (const d of data.data) allResults[batch.offset + d.index] = d.embedding;
+      }
+    });
+    await Promise.all(workers);
+    return allResults;
+  }
+  async generateEmbeddings(texts) {
+    return this.#embedBatch(texts, "doc");
+  }
+  async computeSourceEmbeddings(data) {
+    return this.#embedBatch(data, "doc");
+  }
+  async computeQueryEmbeddings(data) {
+    const [vec] = await this.#embedBatch([data], "query");
+    return vec;
+  }
+};
+var registered = false;
+function ensureRegistered() {
+  if (registered) return;
+  try {
+    (0, import_embedding.getRegistry)().register("f2llm")(F2LLMEmbeddingFunction);
+  } catch {
+  }
+  registered = true;
+}
+var cachedFunction;
+function getEmbeddingFunction(projectRoot) {
+  ensureRegistered();
+  if (cachedFunction !== void 0) return cachedFunction;
+  const config2 = loadEmbeddingConfig(projectRoot);
+  if (!config2) {
+    cachedFunction = null;
+    return null;
+  }
+  cachedFunction = new F2LLMEmbeddingFunction(config2);
+  return cachedFunction;
+}
+
+// src/index-store.ts
+var { connect, Index, rerankers } = import_lancedb.default;
+var TABLE_NAME = "chunks";
+var INDEX_DIR_NAME = ".smart-explore-mcp-cache";
+var FTS_COLUMNS = ["content", "symbol_name", "signature"];
+function escapeSqlString(s) {
+  return s.replace(/'/g, "''");
+}
+function hashContent(content) {
+  return (0, import_node_crypto.createHash)("sha256").update(content).digest("hex").slice(0, 16);
+}
+var IndexStore = class _IndexStore {
+  #projectRoot;
+  #indexDir;
+  #db;
+  #table;
+  #hasEmbedding;
+  #rrf;
+  constructor(projectRoot, indexDir, db, table, hasEmbedding, rrf) {
+    this.#projectRoot = projectRoot;
+    this.#indexDir = indexDir;
+    this.#db = db;
+    this.#table = table;
+    this.#hasEmbedding = hasEmbedding;
+    this.#rrf = rrf;
+  }
+  static getIndexDir(projectRoot) {
+    return (0, import_node_path7.join)(projectRoot, INDEX_DIR_NAME);
+  }
+  static indexExists(projectRoot) {
+    return (0, import_node_fs5.existsSync)((0, import_node_path7.join)(projectRoot, INDEX_DIR_NAME, "lancedb"));
+  }
+  static async open(projectRoot) {
+    getEmbeddingFunction(projectRoot);
+    const indexDir = (0, import_node_path7.join)(projectRoot, INDEX_DIR_NAME);
+    const dbDir = (0, import_node_path7.join)(indexDir, "lancedb");
+    if (!(0, import_node_fs5.existsSync)(indexDir)) (0, import_node_fs5.mkdirSync)(indexDir, { recursive: true });
+    const db = await connect(dbDir);
+    const tableNames = await db.tableNames();
+    let table;
+    let hasEmbedding;
+    if (tableNames.includes(TABLE_NAME)) {
+      table = await db.openTable(TABLE_NAME);
+      const schema = await table.schema();
+      hasEmbedding = schema.metadata?.has("embedding_functions") ?? false;
+      await _IndexStore.ensureFtsIndices(table);
+    } else {
+      const embedFn = getEmbeddingFunction(projectRoot);
+      hasEmbedding = embedFn !== null;
+      const placeholder = [
+        {
+          content: "",
+          file_path: "",
+          symbol_name: "",
+          kind: "",
+          signature: "",
+          line_start: 0,
+          line_end: 0,
+          hash_start: "",
+          language: "",
+          content_hash: "",
+          file_mtime: 0
+        }
+      ];
+      if (hasEmbedding) {
+        table = await db.createTable(TABLE_NAME, placeholder, {
+          mode: "overwrite",
+          embeddingFunction: {
+            sourceColumn: "content",
+            vectorColumn: "vector",
+            function: embedFn
+          }
+        });
+      } else {
+        table = await db.createTable(TABLE_NAME, placeholder, {
+          mode: "overwrite"
+        });
+      }
+      await table.delete("content = ''");
+      await _IndexStore.createFtsIndices(table);
+    }
+    let rrf = null;
+    if (hasEmbedding) {
+      try {
+        rrf = await rerankers.RRFReranker.create();
+      } catch {
+        rrf = null;
+      }
+    }
+    return new _IndexStore(projectRoot, indexDir, db, table, hasEmbedding, rrf);
+  }
+  static async destroy(projectRoot) {
+    const indexDir = (0, import_node_path7.join)(projectRoot, INDEX_DIR_NAME);
+    (0, import_node_fs5.rmSync)(indexDir, { recursive: true, force: true });
+  }
+  static async createFtsIndices(table) {
+    for (const col of FTS_COLUMNS) {
+      await table.createIndex(col, { config: Index.fts() });
+    }
+  }
+  static async ensureFtsIndices(table) {
+    const existing = await table.listIndices();
+    const indexedCols = new Set(existing.map((i) => i.columns?.[0]).filter(Boolean));
+    for (const col of FTS_COLUMNS) {
+      if (!indexedCols.has(col)) {
+        await table.createIndex(col, { config: Index.fts() });
+      }
+    }
+  }
+  get hasEmbedding() {
+    return this.#hasEmbedding;
+  }
+  async upsertChunks(filePath, mtime, chunks) {
+    await this.upsertChunkFiles([{ filePath, mtime, chunks }]);
+  }
+  async upsertChunkFiles(files, options) {
+    const maxRowsPerBatch = options?.maxRowsPerBatch ?? 512;
+    let rows = [];
+    let batchFiles = 0;
+    let batchChunks = 0;
+    const flush = async () => {
+      if (rows.length === 0) return;
+      await this.#table.add(rows);
+      options?.onBatch?.(batchFiles, batchChunks);
+      rows = [];
+      batchFiles = 0;
+      batchChunks = 0;
+    };
+    for (const file of files) {
+      const escaped = escapeSqlString(file.filePath);
+      await this.#table.delete(`file_path = '${escaped}'`);
+      batchFiles++;
+      batchChunks += file.chunks.length;
+      for (const c of file.chunks) {
+        rows.push({
+          content: c.content,
+          file_path: file.filePath,
+          symbol_name: c.symbolName,
+          kind: c.kind,
+          signature: c.signature,
+          line_start: c.lineStart,
+          line_end: c.lineEnd,
+          hash_start: c.hashStart ?? "",
+          language: c.language,
+          content_hash: hashContent(c.content),
+          file_mtime: file.mtime
+        });
+      }
+      if (rows.length >= maxRowsPerBatch) await flush();
+    }
+    await flush();
+    if (batchFiles > 0) options?.onBatch?.(batchFiles, batchChunks);
+  }
+  async deleteFile(filePath) {
+    const escaped = escapeSqlString(filePath);
+    await this.#table.delete(`file_path = '${escaped}'`);
+  }
+  async search(query, filePattern, limit) {
+    const overfetch = Math.min(limit * 3, 100);
+    let q;
+    if (this.#hasEmbedding) {
+      q = this.#table.search(query).limit(overfetch);
+    } else {
+      q = this.#table.search(query, "fts").limit(overfetch);
+    }
+    if (filePattern) {
+      const likePattern = filePattern.replace(/\*/g, "%");
+      q = q.where(`file_path LIKE '%${escapeSqlString(likePattern)}%'`);
+    }
+    if (this.#hasEmbedding && this.#rrf) {
+      q = q.rerank(this.#rrf);
+    }
+    const results = await q.toArray();
+    return results.slice(0, limit).map((r) => ({
+      content: r.content,
+      file_path: r.file_path,
+      symbol_name: r.symbol_name,
+      kind: r.kind,
+      signature: r.signature,
+      line_start: r.line_start,
+      line_end: r.line_end,
+      hash_start: r.hash_start,
+      language: r.language,
+      _distance: r._distance ?? 0
+    }));
+  }
+  async countRows() {
+    return this.#table.countRows();
+  }
+  async getIndexedFiles() {
+    const results = await this.#table.query().select(["file_path", "file_mtime"]).toArray();
+    const fileMtimes = /* @__PURE__ */ new Map();
+    for (const r of results) {
+      const current = fileMtimes.get(r.file_path) ?? 0;
+      if (r.file_mtime > current) {
+        fileMtimes.set(r.file_path, r.file_mtime);
+      }
+    }
+    return fileMtimes;
+  }
+  async close() {
+    try {
+      this.#table.close();
+    } catch {
+    }
+  }
+};
+
+// src/indexer.ts
+var import_node_fs7 = require("node:fs");
+var import_node_child_process2 = require("node:child_process");
+
+// src/chunker.ts
+var CONTAINER_KINDS2 = /* @__PURE__ */ new Set(["class", "struct", "impl", "trait", "interface", "enum", "mixin"]);
+var CHUNK_SIZE = 1e3;
+var CHUNK_OVERLAP = 200;
+function chunkFromParsed(content, parsed) {
+  if (parsed.language === "markdown") {
+    return chunkMarkdown(content, parsed);
+  }
+  if (parsed.symbols.length === 0) {
+    return chunkByChars(content, parsed.language);
+  }
+  return chunkCode(content, parsed, parsed.language);
+}
+function chunkCode(content, parsed, language) {
+  const chunks = [];
+  const lines = content.split("\n");
+  const processSymbol = (sym, parent) => {
+    const fullName = parent ? `${parent}.${sym.name}` : sym.name;
+    if (CONTAINER_KINDS2.has(sym.kind)) {
+      const classFolded = {
+        filePath: parsed.filePath,
+        language,
+        symbols: [sym],
+        imports: [],
+        totalLines: sym.lineEnd - sym.lineStart + 1,
+        foldedTokenEstimate: 0
+      };
+      chunks.push({
+        content: formatFoldedView(classFolded),
+        symbolName: fullName,
+        kind: sym.kind,
+        signature: sym.signature,
+        lineStart: sym.lineStart,
+        lineEnd: sym.lineEnd,
+        hashStart: sym.hashStart,
+        language
+      });
+      if (sym.children) {
+        for (const child of sym.children) {
+          processSymbol(child, fullName);
+        }
+      }
+    } else {
+      const body = lines.slice(sym.lineStart, sym.lineEnd + 1).join("\n");
+      if (body.trim().length > 0) {
+        chunks.push({
+          content: body,
+          symbolName: fullName,
+          kind: sym.kind,
+          signature: sym.signature,
+          lineStart: sym.lineStart,
+          lineEnd: sym.lineEnd,
+          hashStart: sym.hashStart,
+          language
+        });
+      }
+      if (sym.children) {
+        for (const child of sym.children) {
+          processSymbol(child, fullName);
+        }
+      }
+    }
+  };
+  for (const sym of parsed.symbols) {
+    processSymbol(sym);
+  }
+  return chunks;
+}
+function chunkMarkdown(content, parsed) {
+  if (parsed.symbols.length === 0) {
+    return chunkByChars(content, "markdown");
+  }
+  const chunks = [];
+  const lines = content.split("\n");
+  const sections = parsed.symbols.filter((s) => s.kind === "section");
+  for (const sym of sections) {
+    const hashMatch = sym.signature.match(/^(#{1,6})\s/);
+    const level = hashMatch ? hashMatch[1].length : 1;
+    let end = lines.length - 1;
+    for (const other of sections) {
+      if (other.lineStart > sym.lineStart) {
+        const otherHashMatch = other.signature.match(/^(#{1,6})\s/);
+        const otherLevel = otherHashMatch ? otherHashMatch[1].length : 1;
+        if (otherLevel <= level) {
+          end = other.lineStart - 1;
+          while (end > sym.lineStart && lines[end].trim() === "") end--;
+          break;
+        }
+      }
+    }
+    const sectionContent = lines.slice(sym.lineStart, end + 1).join("\n");
+    if (sectionContent.trim().length > 0) {
+      chunks.push({
+        content: sectionContent,
+        symbolName: sym.name,
+        kind: "section",
+        signature: sym.signature,
+        lineStart: sym.lineStart,
+        lineEnd: end,
+        hashStart: sym.hashStart,
+        language: "markdown"
+      });
+    }
+  }
+  return chunks.length > 0 ? chunks : chunkByChars(content, "markdown");
+}
+function chunkByChars(content, language) {
+  const lines = content.split("\n");
+  if (content.trim().length === 0) return [];
+  if (content.length <= CHUNK_SIZE) {
+    return [
+      {
+        content,
+        symbolName: "",
+        kind: "text",
+        signature: "",
+        lineStart: 0,
+        lineEnd: lines.length - 1,
+        language
+      }
+    ];
+  }
+  const breakPoints = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === "") breakPoints.push(i);
+  }
+  const chunks = [];
+  let startLine = 0;
+  while (startLine < lines.length) {
+    let charCount = 0;
+    let endLine = startLine;
+    while (endLine < lines.length && charCount < CHUNK_SIZE) {
+      charCount += lines[endLine].length + 1;
+      endLine++;
+    }
+    if (endLine < lines.length) {
+      let bestBreak = -1;
+      for (const bp of breakPoints) {
+        if (bp >= startLine && bp < endLine) bestBreak = bp;
+      }
+      if (bestBreak >= 0 && bestBreak > startLine) {
+        endLine = bestBreak + 1;
+      }
+    }
+    let overlapStart = startLine;
+    if (startLine > 0) {
+      let overlapChars = 0;
+      let back = startLine - 1;
+      while (back >= 0 && overlapChars < CHUNK_OVERLAP) {
+        overlapChars += lines[back].length + 1;
+        back--;
+      }
+      overlapStart = back + 1;
+    }
+    const chunkContent = lines.slice(overlapStart, endLine).join("\n");
+    if (chunkContent.trim().length > 0) {
+      chunks.push({
+        content: chunkContent,
+        symbolName: "",
+        kind: "text",
+        signature: "",
+        lineStart: startLine,
+        lineEnd: endLine - 1,
+        language
+      });
+    }
+    startLine = endLine;
+  }
+  return chunks;
+}
+
+// src/progress.ts
+var import_node_fs6 = require("node:fs");
+var import_node_path8 = require("node:path");
+var PROGRESS_FILE = "progress.json";
+var CACHE_DIR_NAME = ".smart-explore-mcp-cache";
+function progressPath(projectRoot) {
+  return (0, import_node_path8.join)(projectRoot, CACHE_DIR_NAME, PROGRESS_FILE);
+}
+function readProgress(projectRoot) {
+  const p = progressPath(projectRoot);
+  if (!(0, import_node_fs6.existsSync)(p)) return null;
+  try {
+    return JSON.parse((0, import_node_fs6.readFileSync)(p, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+function writeProgress(projectRoot, state) {
+  const p = progressPath(projectRoot);
+  try {
+    const dir = (0, import_node_path8.join)(projectRoot, CACHE_DIR_NAME);
+    if (!(0, import_node_fs6.existsSync)(dir)) (0, import_node_fs6.mkdirSync)(dir, { recursive: true });
+    (0, import_node_fs6.writeFileSync)(p, JSON.stringify(state, null, 2));
+  } catch {
+  }
+}
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function getProgressStatus(projectRoot) {
+  const state = readProgress(projectRoot);
+  if (!state) return null;
+  if (state.status === "indexing" && !isProcessAlive(state.pid)) {
+    state.status = "error";
+    state.error = "Indexing process died unexpectedly";
+    state.finishedAt = Date.now();
+    writeProgress(projectRoot, state);
+  }
+  return state;
+}
+
+// src/indexer.ts
+async function indexProject(projectRoot, options) {
+  const startTime = Date.now();
+  const force = options?.force ?? false;
+  const existing = readProgress(projectRoot);
+  if (existing?.status === "indexing" && existing.pid !== process.pid && isProcessAlive(existing.pid)) {
+    throw new Error(`Another indexing process is running (pid=${existing.pid})`);
+  }
+  writeProgress(projectRoot, {
+    status: "indexing",
+    percent: 0,
+    filesProcessed: 0,
+    filesTotal: 0,
+    chunksIndexed: 0,
+    startedAt: startTime,
+    finishedAt: null,
+    pid: process.pid,
+    error: null
+  });
+  try {
+    const store = await IndexStore.open(projectRoot);
+    const { files } = await collectSearchableFiles(projectRoot, { projectRoot });
+    const indexedFiles = force ? /* @__PURE__ */ new Map() : await store.getIndexedFiles();
+    const changedFiles = [];
+    for (const file of files) {
+      const storedMtime = indexedFiles.get(file.relativePath);
+      if (storedMtime === void 0) {
+        changedFiles.push(file);
+        continue;
+      }
+      const actualMtime = (0, import_node_fs7.statSync)(file.absolutePath).mtimeMs / 1e3;
+      if (actualMtime > storedMtime) {
+        changedFiles.push(file);
+      }
+    }
+    const currentPaths = new Set(files.map((f) => f.relativePath));
+    const deletedPaths = [];
+    for (const path of indexedFiles.keys()) {
+      if (!currentPaths.has(path)) {
+        deletedPaths.push(path);
+      }
+    }
+    for (const path of deletedPaths) {
+      await store.deleteFile(path);
+    }
+    const totalFiles = changedFiles.length;
+    let processed = 0;
+    let totalChunks = 0;
+    if (totalFiles === 0) {
+      writeProgress(projectRoot, {
+        status: "done",
+        percent: 100,
+        filesProcessed: 0,
+        filesTotal: 0,
+        chunksIndexed: 0,
+        startedAt: startTime,
+        finishedAt: Date.now(),
+        pid: process.pid,
+        error: null
+      });
+      await store.close();
+      return {
+        filesProcessed: 0,
+        filesTotal: 0,
+        chunksIndexed: 0,
+        deletedFiles: deletedPaths.length,
+        duration: Date.now() - startTime
+      };
+    }
+    const parsed = parseFilesBatch(changedFiles, projectRoot);
+    const filesByPath = new Map(changedFiles.map((file) => [file.relativePath, file]));
+    const chunkFiles = [];
+    for (const [relPath, parsedFile] of parsed) {
+      const file = filesByPath.get(relPath);
+      if (!file) continue;
+      const chunks = chunkFromParsed(file.content, parsedFile);
+      const mtime = (0, import_node_fs7.statSync)(file.absolutePath).mtimeMs / 1e3;
+      chunkFiles.push({ filePath: relPath, mtime, chunks });
+    }
+    await store.upsertChunkFiles(chunkFiles, {
+      onBatch: (filesProcessed, chunksIndexed) => {
+        totalChunks += chunksIndexed;
+        processed += filesProcessed;
+        writeProgress(projectRoot, {
+          status: "indexing",
+          percent: Math.round(processed / totalFiles * 100),
+          filesProcessed: processed,
+          filesTotal: totalFiles,
+          chunksIndexed: totalChunks,
+          startedAt: startTime,
+          finishedAt: null,
+          pid: process.pid,
+          error: null
+        });
+      }
+    });
+    await store.close();
+    writeProgress(projectRoot, {
+      status: "done",
+      percent: 100,
+      filesProcessed: processed,
+      filesTotal: totalFiles,
+      chunksIndexed: totalChunks,
+      startedAt: startTime,
+      finishedAt: Date.now(),
+      pid: process.pid,
+      error: null
+    });
+    return {
+      filesProcessed: processed,
+      filesTotal: totalFiles,
+      chunksIndexed: totalChunks,
+      deletedFiles: deletedPaths.length,
+      duration: Date.now() - startTime
+    };
+  } catch (error2) {
+    writeProgress(projectRoot, {
+      status: "error",
+      percent: 0,
+      filesProcessed: 0,
+      filesTotal: 0,
+      chunksIndexed: 0,
+      startedAt: startTime,
+      finishedAt: Date.now(),
+      pid: process.pid,
+      error: error2 instanceof Error ? error2.message : String(error2)
+    });
+    throw error2;
+  }
+}
+function spawnIndexer(projectRoot) {
+  const child = (0, import_node_child_process2.spawn)(process.execPath, [process.argv[1], "--index", projectRoot], {
+    detached: true,
+    stdio: "ignore"
+  });
+  child.unref();
+}
+
 // src/mcp-server.ts
-var import_promises3 = require("node:fs/promises");
-var import_node_path5 = require("node:path");
+var import_promises4 = require("node:fs/promises");
+var import_node_path9 = require("node:path");
 var packageVersion = true ? "12.2.0" : "0.0.0-dev";
 var _log = (...args) => process.stderr.write(args.join(" ") + "\n");
 console["log"] = _log;
@@ -17304,13 +18144,13 @@ var MAX_OUTLINE_DIRECTORY_FILES = 200;
 var tools = [
   {
     name: "smart_search",
-    description: "Search codebase for symbols, functions, classes using tree-sitter AST parsing. Returns folded structural views with token counts. Use path parameter to scope the search.",
+    description: "Search codebase for symbols, functions, classes, and code chunks using hybrid vector + BM25 search (or BM25-only if no embedding model configured). Returns matching chunks with file paths and anchors, grouped by file. Use path parameter to scope the search. If the index does not exist, indexing starts automatically and this call blocks until it completes (up to 90s).",
     inputSchema: {
       type: "object",
       properties: {
         query: {
           type: "string",
-          description: "Search term \u2014 matches against symbol names, file names, and file content"
+          description: "Search query \u2014 natural language or code terms. Matched against function bodies, class outlines, markdown sections, and file content."
         },
         path: {
           type: "string",
@@ -17322,36 +18162,68 @@ var tools = [
         },
         file_pattern: {
           type: "string",
-          description: 'Substring filter for file paths (e.g. ".ts", "src/services")'
-        },
-        exclude_paths: {
-          type: "array",
-          items: { type: "string" },
-          description: "Directory paths to exclude before scanning, relative to path"
-        },
-        exclude_dirs: {
-          type: "array",
-          items: { type: "string" },
-          description: "Alias for exclude_paths"
+          description: 'OPTIONAL \u2014 omit by default. The index already covers all code files. Use ONLY to narrow results to a specific file extension or directory. Pass a simple substring: ".py", "src/services", "test". Supports * as wildcard (e.g. "*.py" matches .py files). Do NOT use brace expansion like "{ts,tsx}" or glob paths like "**/*.py" \u2014 these are not supported and will return 0 matches.'
         }
       },
       required: ["query"]
     },
     handler: async (args) => {
-      const rootDir = (0, import_node_path5.resolve)(args.path || process.cwd());
-      const excludePaths = Array.isArray(args.exclude_paths) ? args.exclude_paths : Array.isArray(args.exclude_dirs) ? args.exclude_dirs : void 0;
-      const result = await searchCodebase(rootDir, args.query, {
-        maxResults: args.max_results || 20,
-        filePattern: args.file_pattern,
-        excludePaths
-      });
-      const formatted = formatSearchResults(result, args.query);
-      return { content: [{ type: "text", text: formatted }] };
+      const rootDir = (0, import_node_path9.resolve)(args.path || process.cwd());
+      const maxResults = args.max_results || 20;
+      const filePattern = args.file_pattern || null;
+      const WAIT_MS = 9e4;
+      const POLL_INTERVAL = 500;
+      const deadline = Date.now() + WAIT_MS;
+      if (!IndexStore.indexExists(rootDir)) {
+        const prog0 = getProgressStatus(rootDir);
+        if (!prog0 || prog0.status !== "indexing") {
+          try {
+            spawnIndexer(rootDir);
+          } catch (e) {
+            return { content: [{ type: "text", text: `Failed to start indexing: ${e instanceof Error ? e.message : String(e)}` }], isError: true };
+          }
+        }
+      }
+      let lastPct = 0;
+      while (Date.now() < deadline) {
+        const exists = IndexStore.indexExists(rootDir);
+        const prog = getProgressStatus(rootDir);
+        const indexing = prog?.status === "indexing";
+        if (exists && !indexing) break;
+        if (prog?.status === "error") {
+          return { content: [{ type: "text", text: `Indexing failed: ${prog.error || "unknown error"}.
+Try smart_index to rebuild.` }], isError: true };
+        }
+        lastPct = prog?.percent ?? lastPct;
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+      }
+      if (!IndexStore.indexExists(rootDir) || getProgressStatus(rootDir)?.status === "indexing") {
+        return {
+          content: [{
+            type: "text",
+            text: `Index is still being built (${lastPct}% complete). Indexing large projects can take a few minutes. Please wait and retry smart_search in ~30 seconds.`
+          }]
+        };
+      }
+      let store;
+      try {
+        store = await IndexStore.open(rootDir);
+      } catch (e) {
+        return { content: [{ type: "text", text: `Failed to open index: ${e instanceof Error ? e.message : String(e)}.
+Try smart_index to rebuild.` }], isError: true };
+      }
+      try {
+        const rows = await store.search(args.query, filePattern, maxResults);
+        const formatted = formatSearchResults(args.query, rows, store.hasEmbedding);
+        return { content: [{ type: "text", text: formatted }] };
+      } finally {
+        await store.close();
+      }
     }
   },
   {
     name: "smart_unfold",
-    description: "Expand a specific symbol (function, class, method) from a file, or read a section of a file by line number/anchor. Returns the full source code of just that symbol or section. Use after smart_search or smart_outline to read specific code. When symbol_name is omitted, reads a file section starting at offset (1-indexed) for limit lines. Pass anchor (LINE#HASH from outline output) to verify the file hasn't changed since the outline was generated.",
+    description: "Expand a specific symbol (function, class, method) from a file. Returns the full source code of just that symbol. Use after smart_search or smart_outline to read specific code.",
     inputSchema: {
       type: "object",
       properties: {
@@ -17361,55 +18233,20 @@ var tools = [
         },
         symbol_name: {
           type: "string",
-          description: "Name of the symbol to unfold (function, class, method, etc.). Omit to read a file section by offset/anchor instead."
-        },
-        offset: {
-          type: "number",
-          description: "Starting line number (1-indexed, default 1). Only used when symbol_name is omitted."
-        },
-        limit: {
-          type: "number",
-          description: "Maximum lines to read (default 200). Start with a small limit and increase if needed. Only used when symbol_name is omitted."
-        },
-        anchor: {
-          type: "string",
-          description: `Line anchor from outline output (format: LINE#HASH, e.g. "41#SN"). Takes precedence over offset. Verifies the file hasn't changed since outline. Only used when symbol_name is omitted.`
+          description: "Name of the symbol to unfold (function, class, method, etc.)"
         }
       },
-      required: ["file_path"]
+      required: ["file_path", "symbol_name"]
     },
     handler: async (args) => {
-      const filePath = (0, import_node_path5.resolve)(args.file_path);
-      const content = await (0, import_promises3.readFile)(filePath, "utf-8");
-      if (!args.symbol_name) {
-        try {
-          const section = readFileSection(
-            content,
-            filePath,
-            args.offset ?? 1,
-            args.limit ?? 200,
-            args.anchor
-          );
-          return { content: [{ type: "text", text: section }] };
-        } catch (error2) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: error2 instanceof Error ? error2.message : String(error2)
-              }
-            ],
-            isError: true
-          };
-        }
-      }
-      const unfolded = unfoldSymbol(content, filePath, args.symbol_name);
+      const filePath = (0, import_node_path9.resolve)(args.file_path);
+      const fileOutline = await getFileOutline(filePath);
+      const unfolded = unfoldSymbolFromFolded(fileOutline.content, filePath, fileOutline.foldedFile, args.symbol_name);
       if (unfolded) {
         return { content: [{ type: "text", text: unfolded }] };
       }
-      const parsed = parseFile(content, filePath);
-      if (parsed.symbols.length > 0) {
-        const available = parsed.symbols.map((s) => `  - ${s.name} (${s.kind})`).join("\n");
+      if (fileOutline.foldedFile.symbols.length > 0) {
+        const available = fileOutline.foldedFile.symbols.map((s) => `  - ${s.name} (${s.kind})`).join("\n");
         return {
           content: [
             {
@@ -17446,23 +18283,10 @@ ${available}`
       required: ["file_path"]
     },
     handler: async (args) => {
-      const filePath = (0, import_node_path5.resolve)(args.file_path);
-      const target = await (0, import_promises3.stat)(filePath);
+      const filePath = (0, import_node_path9.resolve)(args.file_path);
+      const target = await (0, import_promises4.stat)(filePath);
       if (target.isDirectory()) {
-        const { files, truncated } = await collectSearchableFiles(filePath, {
-          projectRoot: filePath,
-          maxFiles: MAX_OUTLINE_DIRECTORY_FILES
-        });
-        const outlines = [];
-        let skippedFiles = 0;
-        for (const file of files) {
-          const parsed2 = parseFile(file.content, file.relativePath, filePath);
-          if (parsed2.symbols.length > 0) {
-            outlines.push(formatFoldedView(parsed2));
-          } else {
-            skippedFiles++;
-          }
-        }
+        const { outlines, truncated, skipped, cached: cached2, parsed: parsed2 } = await getDirectoryOutline(filePath, MAX_OUTLINE_DIRECTORY_FILES);
         if (outlines.length > 0) {
           const parts = [];
           if (truncated) {
@@ -17471,10 +18295,14 @@ ${available}`
               ""
             );
           }
-          if (skippedFiles > 0) {
-            parts.push(`Skipped ${skippedFiles} unsupported or empty files.`, "");
+          if (skipped > 0) {
+            parts.push(`Skipped ${skipped} unsupported or empty files.`, "");
           }
           parts.push(outlines.join("\n\n"));
+          parts.push("");
+          parts.push("\u2500\u2500 Actions \u2500\u2500");
+          parts.push("  To read any symbol above: use smart_unfold with file_path and symbol_name");
+          parts.push("  Do NOT use Read with offset/limit \u2014 use smart_unfold instead");
           return {
             content: [{ type: "text", text: parts.join("\n") }]
           };
@@ -17488,11 +18316,12 @@ ${available}`
           ]
         };
       }
-      const content = await (0, import_promises3.readFile)(filePath, "utf-8");
+      const content = await (0, import_promises4.readFile)(filePath, "utf-8");
       const parsed = parseFile(content, filePath);
       if (parsed.symbols.length > 0) {
+        const text = formatFoldedView(parsed) + "\n\n\u2500\u2500 Actions \u2500\u2500\n  To read any symbol above: use smart_unfold with file_path and symbol_name\n  Do NOT use Read with offset/limit \u2014 use smart_unfold instead";
         return {
-          content: [{ type: "text", text: formatFoldedView(parsed) }]
+          content: [{ type: "text", text }]
         };
       }
       return {
@@ -17525,13 +18354,13 @@ ${available}`
         },
         file_pattern: {
           type: "string",
-          description: 'Substring filter for scanned file paths (e.g. "src/")'
+          description: 'OPTIONAL \u2014 omit by default. Use ONLY to narrow to a specific file extension or directory. Pass a simple substring: ".py", "src/services". Supports * as wildcard (e.g. "*.py"). Do NOT use brace expansion like "{ts,tsx}" \u2014 not supported.'
         }
       },
       required: ["symbol_name"]
     },
     handler: async (args) => {
-      const rootDir = (0, import_node_path5.resolve)(args.path || process.cwd());
+      const rootDir = (0, import_node_path9.resolve)(args.path || process.cwd());
       const text = await findCallers(rootDir, args.symbol_name, {
         maxResults: args.max_results || 40,
         filePattern: args.file_pattern
@@ -17559,13 +18388,13 @@ ${available}`
         },
         file_pattern: {
           type: "string",
-          description: 'Substring filter for scanned file paths (e.g. "src/")'
+          description: 'OPTIONAL \u2014 omit by default. Use ONLY to narrow to a specific file extension or directory. Pass a simple substring: ".py", "src/services". Supports * as wildcard (e.g. "*.py"). Do NOT use brace expansion like "{ts,tsx}" \u2014 not supported.'
         }
       },
       required: ["symbol_name"]
     },
     handler: async (args) => {
-      const rootDir = (0, import_node_path5.resolve)(args.path || process.cwd());
+      const rootDir = (0, import_node_path9.resolve)(args.path || process.cwd());
       const text = await findCallees(rootDir, args.symbol_name, {
         maxResults: args.max_results || 40,
         filePattern: args.file_pattern
@@ -17595,14 +18424,81 @@ ${available}`
       required: ["file_path"]
     },
     handler: async (args) => {
-      const rootDir = (0, import_node_path5.resolve)(args.path || process.cwd());
+      const rootDir = (0, import_node_path9.resolve)(args.path || process.cwd());
       const text = await relatedFiles(rootDir, args.file_path, { maxResults: args.max_results || 40 });
       return { content: [{ type: "text", text }] };
+    }
+  },
+  {
+    name: "smart_index",
+    description: "Force rebuild the search index for a project. Parses all code files, chunks them into functions/classes/sections, computes embeddings (if configured), and stores them in a LanceDB index. Use this when the index is missing, corrupted, or you want to pick up embedding model changes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Root directory of the project to index (default: current working directory)"
+        },
+        force: {
+          type: "boolean",
+          description: "If true, reindex all files even if unchanged (default: false)"
+        }
+      }
+    },
+    handler: async (args) => {
+      const rootDir = (0, import_node_path9.resolve)(args.path || process.cwd());
+      const force = args.force ?? false;
+      try {
+        const result = await indexProject(rootDir, { force });
+        const text = `Indexing complete for ${rootDir}
+  Files processed: ${result.filesProcessed}/${result.filesTotal}
+  Chunks indexed: ${result.chunksIndexed}
+  Deleted files: ${result.deletedFiles}
+  Duration: ${(result.duration / 1e3).toFixed(1)}s`;
+        return { content: [{ type: "text", text }] };
+      } catch (e) {
+        return { content: [{ type: "text", text: `Indexing failed: ${e instanceof Error ? e.message : String(e)}` }], isError: true };
+      }
+    }
+  },
+  {
+    name: "smart_index_status",
+    description: "Check the indexing progress for a project. Returns status (idle/indexing/done/error), percentage complete, file counts, and chunk counts. Use this to poll when smart_search reports indexing is in progress.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Root directory of the project (default: current working directory)"
+        }
+      }
+    },
+    handler: async (args) => {
+      const rootDir = (0, import_node_path9.resolve)(args.path || process.cwd());
+      const prog = getProgressStatus(rootDir);
+      if (!prog) {
+        const exists = IndexStore.indexExists(rootDir);
+        const text = exists ? `Index exists but no progress file found. Index may be from a previous version. Try smart_search directly.` : `No index found for ${rootDir}. Use smart_index to build it.`;
+        return { content: [{ type: "text", text }] };
+      }
+      const lines = [
+        `Index status for ${rootDir}`,
+        `  Status: ${prog.status}`,
+        `  Progress: ${prog.percent}% (${prog.filesProcessed}/${prog.filesTotal} files)`,
+        `  Chunks indexed: ${prog.chunksIndexed}`
+      ];
+      if (prog.status === "done" && prog.finishedAt) {
+        lines.push(`  Completed in ${((prog.finishedAt - prog.startedAt) / 1e3).toFixed(1)}s`);
+      }
+      if (prog.status === "error" && prog.error) {
+        lines.push(`  Error: ${prog.error}`);
+      }
+      return { content: [{ type: "text", text: lines.join("\n") }] };
     }
   }
 ];
 var server = new Server(
-  { name: "claude-mem", version: packageVersion },
+  { name: "smart-explore", version: packageVersion },
   { capabilities: { tools: {} } }
 );
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -17634,6 +18530,73 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 async function main() {
+  const args = process.argv.slice(2);
+  if (args[0] === "--index" && args[1]) {
+    const projectRoot = (0, import_node_path9.resolve)(args[1]);
+    const force = args.includes("--force");
+    process.stderr.write(`[smart-explore] Indexing ${projectRoot}...
+`);
+    try {
+      const result = await indexProject(projectRoot, { force });
+      process.stderr.write(
+        `[smart-explore] Indexing complete: ${result.filesProcessed} files, ${result.chunksIndexed} chunks, ${(result.duration / 1e3).toFixed(1)}s
+`
+      );
+      process.exit(0);
+    } catch (e) {
+      process.stderr.write(`[smart-explore] Indexing failed: ${e instanceof Error ? e.message : String(e)}
+`);
+      process.exit(1);
+    }
+  }
+  if (args[0] === "--warm-cache" && args[1]) {
+    const projectRoot = (0, import_node_path9.resolve)(args[1]);
+    const force = args.includes("--force");
+    const startedAt = Date.now();
+    let lastProgress = "";
+    let progressTimer;
+    const emitProgress = (stage, message) => {
+      const line = `[smart-explore] WARM_PROGRESS ${stage} ${message}`;
+      if (line === lastProgress) return;
+      lastProgress = line;
+      process.stderr.write(`${line}
+`);
+    };
+    process.stderr.write(`[smart-explore] Warming cache for ${projectRoot}...
+`);
+    emitProgress("starting", `0% preparing ${projectRoot}`);
+    try {
+      progressTimer = setInterval(() => {
+        const progress = getProgressStatus(projectRoot);
+        if (!progress) return;
+        if (progress.status === "indexing") {
+          emitProgress(
+            "indexing",
+            `${progress.percent}% ${progress.filesProcessed}/${progress.filesTotal} files, ${progress.chunksIndexed} chunks`
+          );
+        }
+      }, 1e3);
+      const indexResult = await indexProject(projectRoot, { force });
+      if (progressTimer) clearInterval(progressTimer);
+      progressTimer = void 0;
+      emitProgress("outline", "index complete, building outline cache");
+      const outlineResult = await warmDirectoryOutlineCache(projectRoot);
+      emitProgress(
+        "done",
+        `100% index ${indexResult.filesProcessed} files/${indexResult.chunksIndexed} chunks, outline ${outlineResult.parsed} parsed/${outlineResult.cached} cached`
+      );
+      process.stderr.write(
+        `[smart-explore] Cache warm complete: index ${indexResult.filesProcessed} files/${indexResult.chunksIndexed} chunks, outline ${outlineResult.parsed} parsed/${outlineResult.cached} cached, ${((Date.now() - startedAt) / 1e3).toFixed(1)}s
+`
+      );
+      process.exit(0);
+    } catch (e) {
+      if (progressTimer) clearInterval(progressTimer);
+      process.stderr.write(`[smart-explore] Cache warm failed: ${e instanceof Error ? e.message : String(e)}
+`);
+      process.exit(1);
+    }
+  }
   isHashlineEditEnabled();
   const transport = new StdioServerTransport();
   await server.connect(transport);

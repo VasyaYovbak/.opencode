@@ -14,7 +14,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(`${__dirname}/../package.json`, 'utf-8'));
 const version = pkg.version;
 
-// tree-sitter grammar packages — loaded at runtime from node_modules
+// Native packages — loaded at runtime from node_modules
 const TREE_SITTER_EXTERNAL = [
   'tree-sitter-cli',
   'tree-sitter-javascript',
@@ -42,6 +42,10 @@ const TREE_SITTER_EXTERNAL = [
   '@tree-sitter-grammars/tree-sitter-yaml',
   '@derekstride/tree-sitter-sql',
   '@tree-sitter-grammars/tree-sitter-markdown',
+  // Native deps with NAPI bindings — loaded at runtime from node_modules
+  '@lancedb/lancedb',
+  'apache-arrow',
+  'reflect-metadata',
 ];
 
 console.log(`Building mcp-server v${version}...`);

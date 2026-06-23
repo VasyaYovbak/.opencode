@@ -1,0 +1,10 @@
+{
+  "embedding": {
+    "baseUrl": "",
+    "model": "codefuse-ai/F2LLM-v2-1.7B",
+    "dim": 2048,
+    "queryPrompt": "Instruct: Given a coding question, retrieve relevant code or docs.\nQuery: ",
+    "maxBatchSize": 32,
+    "maxConcurrency": 4
+  }
+}

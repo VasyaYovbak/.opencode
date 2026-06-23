@@ -30,10 +30,14 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { searchCodebase, formatSearchResults, collectSearchableFiles } from './search.js';
-import { parseFile, formatFoldedView, unfoldSymbol, readFileSection } from './parser.js';
+import { formatSearchResults } from './search.js';
+import { parseFile, formatFoldedView, unfoldSymbolFromFolded } from './parser.js';
+import { getDirectoryOutline, getFileOutline, warmDirectoryOutlineCache } from './outline-cache.js';
 import { findCallers, findCallees, relatedFiles } from './relations.js';
 import { isHashlineEditEnabled } from './hashline.js';
+import { IndexStore, type SearchRow } from './index-store.js';
+import { indexProject, spawnIndexer } from './indexer.js';
+import { getProgressStatus } from './progress.js';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -42,14 +46,13 @@ const tools = [
   {
     name: 'smart_search',
     description:
-      'Search codebase for symbols, functions, classes using tree-sitter AST parsing. Returns folded structural views with token counts. Use path parameter to scope the search.',
+      'Search codebase for symbols, functions, classes, and code chunks using hybrid vector + BM25 search (or BM25-only if no embedding model configured). Returns matching chunks with file paths and anchors, grouped by file. Use path parameter to scope the search. If the index does not exist, indexing starts automatically and this call blocks until it completes (up to 90s).',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description:
-            'Search term — matches against symbol names, file names, and file content',
+          description: 'Search query — natural language or code terms. Matched against function bodies, class outlines, markdown sections, and file content.',
         },
         path: {
           type: 'string',
@@ -63,43 +66,77 @@ const tools = [
         file_pattern: {
           type: 'string',
           description:
-            'Substring filter for file paths (e.g. ".ts", "src/services")',
-        },
-        exclude_paths: {
-          type: 'array',
-          items: { type: 'string' },
-          description:
-            'Directory paths to exclude before scanning, relative to path',
-        },
-        exclude_dirs: {
-          type: 'array',
-          items: { type: 'string' },
-          description:
-            'Alias for exclude_paths',
+            'OPTIONAL — omit by default. The index already covers all code files. Use ONLY to narrow results to a specific file extension or directory. Pass a simple substring: ".py", "src/services", "test". Supports * as wildcard (e.g. "*.py" matches .py files). Do NOT use brace expansion like "{ts,tsx}" or glob paths like "**/*.py" — these are not supported and will return 0 matches.',
         },
       },
       required: ['query'],
     },
     handler: async (args: any) => {
       const rootDir = resolve(args.path || process.cwd());
-      const excludePaths = Array.isArray(args.exclude_paths)
-        ? args.exclude_paths
-        : Array.isArray(args.exclude_dirs)
-          ? args.exclude_dirs
-          : undefined;
-      const result = await searchCodebase(rootDir, args.query, {
-        maxResults: args.max_results || 20,
-        filePattern: args.file_pattern,
-        excludePaths,
-      });
-      const formatted = formatSearchResults(result, args.query);
-      return { content: [{ type: 'text' as const, text: formatted }] };
+      const maxResults = args.max_results || 20;
+      const filePattern = args.file_pattern || null;
+
+      // If index missing or still building, wait for indexing to complete (max 90s)
+      const WAIT_MS = 90_000;
+      const POLL_INTERVAL = 500;
+      const deadline = Date.now() + WAIT_MS;
+
+      if (!IndexStore.indexExists(rootDir)) {
+        const prog0 = getProgressStatus(rootDir);
+        if (!prog0 || prog0.status !== 'indexing') {
+          try {
+            spawnIndexer(rootDir);
+          } catch (e) {
+            return { content: [{ type: 'text' as const, text: `Failed to start indexing: ${e instanceof Error ? e.message : String(e)}` }], isError: true };
+          }
+        }
+      }
+
+      // Poll until index exists AND no indexing is in progress (or timeout)
+      let lastPct = 0;
+      while (Date.now() < deadline) {
+        const exists = IndexStore.indexExists(rootDir);
+        const prog = getProgressStatus(rootDir);
+        const indexing = prog?.status === 'indexing';
+        if (exists && !indexing) break;
+        if (prog?.status === 'error') {
+          return { content: [{ type: 'text' as const, text: `Indexing failed: ${prog.error || 'unknown error'}.
+Try smart_index to rebuild.` }], isError: true };
+        }
+        lastPct = prog?.percent ?? lastPct;
+        await new Promise(r => setTimeout(r, POLL_INTERVAL));
+      }
+
+      // If still not ready after timeout, tell the model to poll
+      if (!IndexStore.indexExists(rootDir) || getProgressStatus(rootDir)?.status === 'indexing') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Index is still being built (${lastPct}% complete). Indexing large projects can take a few minutes. Please wait and retry smart_search in ~30 seconds.`,
+          }],
+        };
+      }
+
+      let store: IndexStore;
+      try {
+        store = await IndexStore.open(rootDir);
+      } catch (e) {
+        return { content: [{ type: 'text' as const, text: `Failed to open index: ${e instanceof Error ? e.message : String(e)}.\nTry smart_index to rebuild.` }], isError: true };
+      }
+
+      try {
+        const rows: SearchRow[] = await store.search(args.query, filePattern, maxResults);
+        const formatted = formatSearchResults(args.query, rows, store.hasEmbedding);
+        return { content: [{ type: 'text' as const, text: formatted }] };
+      } finally {
+        await store.close();
+      }
     },
   },
   {
     name: 'smart_unfold',
     description:
-      'Expand a specific symbol (function, class, method) from a file, or read a section of a file by line number/anchor. Returns the full source code of just that symbol or section. Use after smart_search or smart_outline to read specific code. When symbol_name is omitted, reads a file section starting at offset (1-indexed) for limit lines. Pass anchor (LINE#HASH from outline output) to verify the file hasn\'t changed since the outline was generated.',
+      'Expand a specific symbol (function, class, method) from a file. Returns the full source code of just that symbol. Use after smart_search or smart_outline to read specific code.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -110,60 +147,20 @@ const tools = [
         symbol_name: {
           type: 'string',
           description:
-            'Name of the symbol to unfold (function, class, method, etc.). Omit to read a file section by offset/anchor instead.',
-        },
-        offset: {
-          type: 'number',
-          description: 'Starting line number (1-indexed, default 1). Only used when symbol_name is omitted.',
-        },
-        limit: {
-          type: 'number',
-          description: 'Maximum lines to read (default 200). Start with a small limit and increase if needed. Only used when symbol_name is omitted.',
-        },
-        anchor: {
-          type: 'string',
-          description:
-            'Line anchor from outline output (format: LINE#HASH, e.g. "41#SN"). Takes precedence over offset. Verifies the file hasn\'t changed since outline. Only used when symbol_name is omitted.',
+            'Name of the symbol to unfold (function, class, method, etc.)',
         },
       },
-      required: ['file_path'],
+      required: ['file_path', 'symbol_name'],
     },
     handler: async (args: any) => {
       const filePath = resolve(args.file_path);
-      const content = await readFile(filePath, 'utf-8');
-
-      // File section read mode (no symbol_name)
-      if (!args.symbol_name) {
-        try {
-          const section = readFileSection(
-            content,
-            filePath,
-            args.offset ?? 1,
-            args.limit ?? 200,
-            args.anchor
-          );
-          return { content: [{ type: 'text' as const, text: section }] };
-        } catch (error) {
-          return {
-            content: [
-            {
-              type: 'text' as const,
-              text: error instanceof Error ? error.message : String(error),
-            },
-          ],
-          isError: true,
-        };
-        }
-      }
-
-      // Symbol unfold mode (existing behavior)
-      const unfolded = unfoldSymbol(content, filePath, args.symbol_name);
+      const fileOutline = await getFileOutline(filePath);
+      const unfolded = unfoldSymbolFromFolded(fileOutline.content, filePath, fileOutline.foldedFile, args.symbol_name);
       if (unfolded) {
         return { content: [{ type: 'text' as const, text: unfolded }] };
       }
-      const parsed = parseFile(content, filePath);
-      if (parsed.symbols.length > 0) {
-        const available = parsed.symbols
+      if (fileOutline.foldedFile.symbols.length > 0) {
+        const available = fileOutline.foldedFile.symbols
           .map((s) => `  - ${s.name} (${s.kind})`)
           .join('\n');
         return {
@@ -204,22 +201,7 @@ const tools = [
       const target = await stat(filePath);
 
       if (target.isDirectory()) {
-        const { files, truncated } = await collectSearchableFiles(filePath, {
-          projectRoot: filePath,
-          maxFiles: MAX_OUTLINE_DIRECTORY_FILES,
-        });
-
-        const outlines: string[] = [];
-        let skippedFiles = 0;
-
-        for (const file of files) {
-          const parsed = parseFile(file.content, file.relativePath, filePath);
-          if (parsed.symbols.length > 0) {
-            outlines.push(formatFoldedView(parsed));
-          } else {
-            skippedFiles++;
-          }
-        }
+        const { outlines, truncated, skipped, cached, parsed } = await getDirectoryOutline(filePath, MAX_OUTLINE_DIRECTORY_FILES);
 
         if (outlines.length > 0) {
           const parts: string[] = [];
@@ -229,10 +211,14 @@ const tools = [
               ''
             );
           }
-          if (skippedFiles > 0) {
-            parts.push(`Skipped ${skippedFiles} unsupported or empty files.`, '');
+          if (skipped > 0) {
+            parts.push(`Skipped ${skipped} unsupported or empty files.`, '');
           }
           parts.push(outlines.join('\n\n'));
+          parts.push('');
+          parts.push('── Actions ──');
+          parts.push('  To read any symbol above: use smart_unfold with file_path and symbol_name');
+          parts.push('  Do NOT use Read with offset/limit — use smart_unfold instead');
           return {
             content: [{ type: 'text' as const, text: parts.join('\n') }],
           };
@@ -251,8 +237,9 @@ const tools = [
       const content = await readFile(filePath, 'utf-8');
       const parsed = parseFile(content, filePath);
       if (parsed.symbols.length > 0) {
+        const text = formatFoldedView(parsed) + '\n\n── Actions ──\n  To read any symbol above: use smart_unfold with file_path and symbol_name\n  Do NOT use Read with offset/limit — use smart_unfold instead';
         return {
-          content: [{ type: 'text' as const, text: formatFoldedView(parsed) }],
+          content: [{ type: 'text' as const, text }],
         };
       }
       return {
@@ -286,7 +273,8 @@ const tools = [
         },
         file_pattern: {
           type: 'string',
-          description: 'Substring filter for scanned file paths (e.g. "src/")',
+          description:
+            'OPTIONAL — omit by default. Use ONLY to narrow to a specific file extension or directory. Pass a simple substring: ".py", "src/services". Supports * as wildcard (e.g. "*.py"). Do NOT use brace expansion like "{ts,tsx}" — not supported.',
         },
       },
       required: ['symbol_name'],
@@ -321,7 +309,8 @@ const tools = [
         },
         file_pattern: {
           type: 'string',
-          description: 'Substring filter for scanned file paths (e.g. "src/")',
+          description:
+            'OPTIONAL — omit by default. Use ONLY to narrow to a specific file extension or directory. Pass a simple substring: ".py", "src/services". Supports * as wildcard (e.g. "*.py"). Do NOT use brace expansion like "{ts,tsx}" — not supported.',
         },
       },
       required: ['symbol_name'],
@@ -363,12 +352,83 @@ const tools = [
       return { content: [{ type: 'text' as const, text }] };
     },
   },
+  {
+    name: 'smart_index',
+    description:
+      'Force rebuild the search index for a project. Parses all code files, chunks them into functions/classes/sections, computes embeddings (if configured), and stores them in a LanceDB index. Use this when the index is missing, corrupted, or you want to pick up embedding model changes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Root directory of the project to index (default: current working directory)',
+        },
+        force: {
+          type: 'boolean',
+          description: 'If true, reindex all files even if unchanged (default: false)',
+        },
+      },
+    },
+    handler: async (args: any) => {
+      const rootDir = resolve(args.path || process.cwd());
+      const force = args.force ?? false;
+      try {
+        const result = await indexProject(rootDir, { force });
+        const text = `Indexing complete for ${rootDir}\n` +
+          `  Files processed: ${result.filesProcessed}/${result.filesTotal}\n` +
+          `  Chunks indexed: ${result.chunksIndexed}\n` +
+          `  Deleted files: ${result.deletedFiles}\n` +
+          `  Duration: ${(result.duration / 1000).toFixed(1)}s`;
+        return { content: [{ type: 'text' as const, text }] };
+      } catch (e) {
+        return { content: [{ type: 'text' as const, text: `Indexing failed: ${e instanceof Error ? e.message : String(e)}` }], isError: true };
+      }
+    },
+  },
+  {
+    name: 'smart_index_status',
+    description:
+      'Check the indexing progress for a project. Returns status (idle/indexing/done/error), percentage complete, file counts, and chunk counts. Use this to poll when smart_search reports indexing is in progress.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Root directory of the project (default: current working directory)',
+        },
+      },
+    },
+    handler: async (args: any) => {
+      const rootDir = resolve(args.path || process.cwd());
+      const prog = getProgressStatus(rootDir);
+      if (!prog) {
+        const exists = IndexStore.indexExists(rootDir);
+        const text = exists
+          ? `Index exists but no progress file found. Index may be from a previous version. Try smart_search directly.`
+          : `No index found for ${rootDir}. Use smart_index to build it.`;
+        return { content: [{ type: 'text' as const, text }] };
+      }
+      const lines = [
+        `Index status for ${rootDir}`,
+        `  Status: ${prog.status}`,
+        `  Progress: ${prog.percent}% (${prog.filesProcessed}/${prog.filesTotal} files)`,
+        `  Chunks indexed: ${prog.chunksIndexed}`,
+      ];
+      if (prog.status === 'done' && prog.finishedAt) {
+        lines.push(`  Completed in ${((prog.finishedAt - prog.startedAt) / 1000).toFixed(1)}s`);
+      }
+      if (prog.status === 'error' && prog.error) {
+        lines.push(`  Error: ${prog.error}`);
+      }
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+    },
+  },
 ];
 
 // --- MCP Server setup ---
 
 const server = new Server(
-  { name: 'claude-mem', version: packageVersion },
+  { name: 'smart-explore', version: packageVersion },
   { capabilities: { tools: {} } }
 );
 
@@ -402,7 +462,71 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function main() {
-  isHashlineEditEnabled(); // warm config cache at startup
+  const args = process.argv.slice(2);
+  if (args[0] === '--index' && args[1]) {
+    const projectRoot = resolve(args[1]);
+    const force = args.includes('--force');
+    process.stderr.write(`[smart-explore] Indexing ${projectRoot}...\n`);
+    try {
+      const result = await indexProject(projectRoot, { force });
+      process.stderr.write(
+        `[smart-explore] Indexing complete: ${result.filesProcessed} files, ${result.chunksIndexed} chunks, ${(result.duration / 1000).toFixed(1)}s\n`
+      );
+      process.exit(0);
+    } catch (e) {
+      process.stderr.write(`[smart-explore] Indexing failed: ${e instanceof Error ? e.message : String(e)}\n`);
+      process.exit(1);
+    }
+  }
+
+  if (args[0] === '--warm-cache' && args[1]) {
+    const projectRoot = resolve(args[1]);
+    const force = args.includes('--force');
+    const startedAt = Date.now();
+    let lastProgress = '';
+    let progressTimer: ReturnType<typeof setInterval> | undefined;
+
+    const emitProgress = (stage: string, message: string) => {
+      const line = `[smart-explore] WARM_PROGRESS ${stage} ${message}`;
+      if (line === lastProgress) return;
+      lastProgress = line;
+      process.stderr.write(`${line}\n`);
+    };
+
+    process.stderr.write(`[smart-explore] Warming cache for ${projectRoot}...\n`);
+    emitProgress('starting', `0% preparing ${projectRoot}`);
+    try {
+      progressTimer = setInterval(() => {
+        const progress = getProgressStatus(projectRoot);
+        if (!progress) return;
+        if (progress.status === 'indexing') {
+          emitProgress(
+            'indexing',
+            `${progress.percent}% ${progress.filesProcessed}/${progress.filesTotal} files, ${progress.chunksIndexed} chunks`,
+          );
+        }
+      }, 1000);
+      const indexResult = await indexProject(projectRoot, { force });
+      if (progressTimer) clearInterval(progressTimer);
+      progressTimer = undefined;
+      emitProgress('outline', 'index complete, building outline cache');
+      const outlineResult = await warmDirectoryOutlineCache(projectRoot);
+      emitProgress(
+        'done',
+        `100% index ${indexResult.filesProcessed} files/${indexResult.chunksIndexed} chunks, outline ${outlineResult.parsed} parsed/${outlineResult.cached} cached`,
+      );
+      process.stderr.write(
+        `[smart-explore] Cache warm complete: index ${indexResult.filesProcessed} files/${indexResult.chunksIndexed} chunks, outline ${outlineResult.parsed} parsed/${outlineResult.cached} cached, ${((Date.now() - startedAt) / 1000).toFixed(1)}s\n`
+      );
+      process.exit(0);
+    } catch (e) {
+      if (progressTimer) clearInterval(progressTimer);
+      process.stderr.write(`[smart-explore] Cache warm failed: ${e instanceof Error ? e.message : String(e)}\n`);
+      process.exit(1);
+    }
+  }
+
+  isHashlineEditEnabled();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write(`[mcp-server] smart-explore v${packageVersion} ready\n`);

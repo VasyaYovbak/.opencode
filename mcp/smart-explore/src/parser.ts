@@ -15,7 +15,7 @@ import { writeFileSync, readFileSync, mkdtempSync, rmSync, existsSync } from "no
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
-import { formatHashLine, lineAnchor, isHashlineEditEnabled, parseAnchor, verifyLineAnchor } from "./hashline.js";
+import { formatHashLine, lineAnchor, isHashlineEditEnabled } from "./hashline.js";
 
 // The distributed server is bundled as CJS, so use Node's runtime __filename.
 const _require = createRequire(__filename);
@@ -1167,7 +1167,15 @@ function getSymbolIcon(kind: CodeSymbol["kind"]): string {
 
 export function unfoldSymbol(content: string, filePath: string, symbolName: string): string | null {
   const file = parseFile(content, filePath);
+  return unfoldSymbolFromFolded(content, filePath, file, symbolName);
+}
 
+export function unfoldSymbolFromFolded(
+  content: string,
+  filePath: string,
+  file: FoldedFile,
+  symbolName: string
+): string | null {
   const findSymbol = (symbols: CodeSymbol[]): CodeSymbol | null => {
     for (const sym of symbols) {
       if (sym.name === symbolName) return sym;
@@ -1235,57 +1243,3 @@ export function unfoldSymbol(content: string, filePath: string, symbolName: stri
   return `// 📍 ${filePath} L${start + 1}-${symbol.lineEnd + 1}\n${slice.join("\n")}`;
 }
 
-/**
- * Read a section of a file by line number or anchor.
- * Used when smart_outline doesn't surface the needed content (e.g. top-level
- * expression statements, configuration blocks, content between symbols).
- *
- * When `anchor` is provided (format: "LINE#HASH" from outline output), verifies
- * the file hasn't changed since the outline was generated. Throws on mismatch.
- */
-export function readFileSection(
-  content: string,
-  filePath: string,
-  offset: number = 1,
-  limit: number = 200,
-  anchor?: string
-): string {
-  const lines = content.split("\n");
-  const totalLines = lines.length;
-  let startLine = Math.max(1, offset);
-
-  if (anchor) {
-    const parsed = parseAnchor(anchor);
-    if (!parsed) {
-      throw new Error(`Invalid anchor format: "${anchor}". Expected format: LINE#HASH (e.g. "41#SN").`);
-    }
-    startLine = parsed.lineNumber;
-    if (startLine < 1 || startLine > totalLines) {
-      throw new Error(
-        `Anchor line ${startLine} is out of range (file has ${totalLines} lines). File may have changed — re-run smart_outline.`
-      );
-    }
-    const lineContent = (lines[startLine - 1] ?? "").replace(/\r$/, "");
-    if (!verifyLineAnchor(startLine, lineContent, parsed.hash)) {
-      throw new Error(
-        `Anchor "${anchor}" does not match current file content. File has changed since outline was generated — re-run smart_outline.`
-      );
-    }
-  }
-
-  const effectiveLimit = limit > 0 ? limit : 200;
-  const startIdx = Math.max(0, startLine - 1);
-  const endIdx = Math.min(totalLines, startIdx + effectiveLimit);
-  const slice = lines.slice(startIdx, endIdx);
-  const endLine = startLine + slice.length - 1;
-
-  if (slice.length === 0) {
-    return `// 📍 ${filePath} L${startLine}-${startLine} (empty — offset beyond end of ${totalLines}-line file)`;
-  }
-
-  if (isHashlineEditEnabled()) {
-    const hashlined = slice.map((ln, i) => formatHashLine(startLine + i, ln.replace(/\r$/, "")));
-    return `// 📍 ${filePath}\n${hashlined.join("\n")}`;
-  }
-  return `// 📍 ${filePath} L${startLine}-${endLine}\n${slice.join("\n")}`;
-}
