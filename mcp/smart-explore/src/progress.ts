@@ -7,6 +7,7 @@ export interface ProgressState {
   filesProcessed: number;
   filesTotal: number;
   chunksIndexed: number;
+  chunksTotal: number;
   startedAt: number;
   finishedAt: number | null;
   pid: number;
@@ -51,6 +52,7 @@ export function isProcessAlive(pid: number): boolean {
 export function getProgressStatus(projectRoot: string): ProgressState | null {
   const state = readProgress(projectRoot);
   if (!state) return null;
+  if (!Number.isFinite(state.chunksTotal)) state.chunksTotal = state.chunksIndexed;
 
   if (state.status === "indexing" && !isProcessAlive(state.pid)) {
     state.status = "error";

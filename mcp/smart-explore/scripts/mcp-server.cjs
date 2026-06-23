@@ -17483,6 +17483,7 @@ function loadEmbeddingConfig(projectRoot) {
 var DEFAULT_QUERY_PROMPT2 = "Instruct: Given a coding question, retrieve relevant code or docs.\nQuery: ";
 var DEFAULT_MAX_BATCH_SIZE2 = 64;
 var DEFAULT_MAX_CONCURRENCY2 = 4;
+var embeddingProgressHandler = null;
 var F2LLMEmbeddingFunction = class extends import_embedding.TextEmbeddingFunction {
   #baseUrl;
   #model;
@@ -17509,10 +17510,11 @@ var F2LLMEmbeddingFunction = class extends import_embedding.TextEmbeddingFunctio
   async #embedBatch(texts, mode) {
     if (texts.length === 0) return [];
     const inputs = mode === "query" ? texts.map((t) => this.#queryPrompt + t) : texts;
+    const batchSize = mode === "doc" && embeddingProgressHandler ? Math.min(this.#maxBatchSize, 8) : this.#maxBatchSize;
     const batches = [];
     const allResults = new Array(inputs.length);
-    for (let i = 0; i < inputs.length; i += this.#maxBatchSize) {
-      batches.push({ offset: i, texts: inputs.slice(i, i + this.#maxBatchSize) });
+    for (let i = 0; i < inputs.length; i += batchSize) {
+      batches.push({ offset: i, texts: inputs.slice(i, i + batchSize) });
     }
     let nextBatch = 0;
     const workers = Array.from({ length: Math.min(this.#maxConcurrency, batches.length) }, async () => {
@@ -17529,6 +17531,7 @@ var F2LLMEmbeddingFunction = class extends import_embedding.TextEmbeddingFunctio
         }
         const data = await resp.json();
         for (const d of data.data) allResults[batch.offset + d.index] = d.embedding;
+        if (mode === "doc") embeddingProgressHandler?.(batch.texts.length);
       }
     });
     await Promise.all(workers);
@@ -17565,6 +17568,9 @@ function getEmbeddingFunction(projectRoot) {
   }
   cachedFunction = new F2LLMEmbeddingFunction(config2);
   return cachedFunction;
+}
+function setEmbeddingProgressHandler(handler) {
+  embeddingProgressHandler = handler;
 }
 
 // src/index-store.ts
@@ -17987,6 +17993,7 @@ function isProcessAlive(pid) {
 function getProgressStatus(projectRoot) {
   const state = readProgress(projectRoot);
   if (!state) return null;
+  if (!Number.isFinite(state.chunksTotal)) state.chunksTotal = state.chunksIndexed;
   if (state.status === "indexing" && !isProcessAlive(state.pid)) {
     state.status = "error";
     state.error = "Indexing process died unexpectedly";
@@ -17997,6 +18004,7 @@ function getProgressStatus(projectRoot) {
 }
 
 // src/indexer.ts
+var PROGRESS_WRITE_INTERVAL_MS = 250;
 async function indexProject(projectRoot, options) {
   const startTime = Date.now();
   const force = options?.force ?? false;
@@ -18010,11 +18018,16 @@ async function indexProject(projectRoot, options) {
     filesProcessed: 0,
     filesTotal: 0,
     chunksIndexed: 0,
+    chunksTotal: 0,
     startedAt: startTime,
     finishedAt: null,
     pid: process.pid,
     error: null
   });
+  let totalFiles = 0;
+  let processed = 0;
+  let indexedChunks = 0;
+  let chunksTotal = 0;
   try {
     const store = await IndexStore.open(projectRoot);
     const { files } = await collectSearchableFiles(projectRoot, { projectRoot });
@@ -18041,21 +18054,33 @@ async function indexProject(projectRoot, options) {
     for (const path of deletedPaths) {
       await store.deleteFile(path);
     }
-    const totalFiles = changedFiles.length;
-    let processed = 0;
-    let totalChunks = 0;
-    if (totalFiles === 0) {
+    totalFiles = changedFiles.length;
+    processed = 0;
+    indexedChunks = 0;
+    chunksTotal = 0;
+    let lastProgressWrite = 0;
+    const writeIndexProgress = (status, forceWrite = false) => {
+      const now = Date.now();
+      if (!forceWrite && now - lastProgressWrite < PROGRESS_WRITE_INTERVAL_MS) return;
+      lastProgressWrite = now;
+      const chunkRatio = chunksTotal > 0 ? indexedChunks / chunksTotal : 0;
+      const percent = status === "done" ? 100 : chunksTotal > 0 ? Number((chunkRatio * 100).toFixed(1)) : totalFiles > 0 ? Number((processed / totalFiles * 100).toFixed(1)) : 0;
+      const filesProcessed = status === "done" ? processed : chunksTotal > 0 ? Number((chunkRatio * totalFiles).toFixed(2)) : processed;
       writeProgress(projectRoot, {
-        status: "done",
-        percent: 100,
-        filesProcessed: 0,
-        filesTotal: 0,
-        chunksIndexed: 0,
+        status,
+        percent,
+        filesProcessed,
+        filesTotal: totalFiles,
+        chunksIndexed: indexedChunks,
+        chunksTotal,
         startedAt: startTime,
-        finishedAt: Date.now(),
+        finishedAt: status === "indexing" ? null : now,
         pid: process.pid,
         error: null
       });
+    };
+    if (totalFiles === 0) {
+      writeIndexProgress("done", true);
       await store.close();
       return {
         filesProcessed: 0,
@@ -18075,49 +18100,48 @@ async function indexProject(projectRoot, options) {
       const mtime = (0, import_node_fs7.statSync)(file.absolutePath).mtimeMs / 1e3;
       chunkFiles.push({ filePath: relPath, mtime, chunks });
     }
-    await store.upsertChunkFiles(chunkFiles, {
-      onBatch: (filesProcessed, chunksIndexed) => {
-        totalChunks += chunksIndexed;
-        processed += filesProcessed;
-        writeProgress(projectRoot, {
-          status: "indexing",
-          percent: Math.round(processed / totalFiles * 100),
-          filesProcessed: processed,
-          filesTotal: totalFiles,
-          chunksIndexed: totalChunks,
-          startedAt: startTime,
-          finishedAt: null,
-          pid: process.pid,
-          error: null
+    chunksTotal = chunkFiles.reduce((sum, file) => sum + file.chunks.length, 0);
+    writeIndexProgress("indexing", true);
+    try {
+      if (store.hasEmbedding && chunksTotal > 0) {
+        setEmbeddingProgressHandler((chunkCount) => {
+          indexedChunks = Math.min(chunksTotal, indexedChunks + chunkCount);
+          writeIndexProgress("indexing");
         });
       }
-    });
+      await store.upsertChunkFiles(chunkFiles, {
+        onBatch: (filesProcessed, chunksIndexed) => {
+          processed += filesProcessed;
+          if (!store.hasEmbedding) {
+            indexedChunks = Math.min(chunksTotal, indexedChunks + chunksIndexed);
+          }
+          writeIndexProgress("indexing", true);
+        }
+      });
+    } finally {
+      setEmbeddingProgressHandler(null);
+    }
     await store.close();
-    writeProgress(projectRoot, {
-      status: "done",
-      percent: 100,
-      filesProcessed: processed,
-      filesTotal: totalFiles,
-      chunksIndexed: totalChunks,
-      startedAt: startTime,
-      finishedAt: Date.now(),
-      pid: process.pid,
-      error: null
-    });
+    processed = totalFiles;
+    indexedChunks = chunksTotal;
+    writeIndexProgress("done", true);
     return {
       filesProcessed: processed,
       filesTotal: totalFiles,
-      chunksIndexed: totalChunks,
+      chunksIndexed: chunksTotal,
       deletedFiles: deletedPaths.length,
       duration: Date.now() - startTime
     };
   } catch (error2) {
+    const percent = chunksTotal > 0 ? Number((indexedChunks / chunksTotal * 100).toFixed(1)) : 0;
+    const filesProcessed = chunksTotal > 0 ? Number((indexedChunks / chunksTotal * totalFiles).toFixed(2)) : processed;
     writeProgress(projectRoot, {
       status: "error",
-      percent: 0,
-      filesProcessed: 0,
-      filesTotal: 0,
-      chunksIndexed: 0,
+      percent,
+      filesProcessed,
+      filesTotal: totalFiles,
+      chunksIndexed: indexedChunks,
+      chunksTotal,
       startedAt: startTime,
       finishedAt: Date.now(),
       pid: process.pid,
@@ -18141,6 +18165,12 @@ var packageVersion = true ? "12.2.0" : "0.0.0-dev";
 var _log = (...args) => process.stderr.write(args.join(" ") + "\n");
 console["log"] = _log;
 var MAX_OUTLINE_DIRECTORY_FILES = 200;
+function formatProgressValue(value, digits = 1) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(digits);
+}
+function formatIndexProgress(percent, filesProcessed, filesTotal, chunksIndexed, chunksTotal) {
+  return `${formatProgressValue(percent)}% (${formatProgressValue(filesProcessed, 2)}/${filesTotal} files, ${chunksIndexed}/${chunksTotal} chunks)`;
+}
 var tools = [
   {
     name: "smart_search",
@@ -18201,7 +18231,7 @@ Try smart_index to rebuild.` }], isError: true };
         return {
           content: [{
             type: "text",
-            text: `Index is still being built (${lastPct}% complete). Indexing large projects can take a few minutes. Please wait and retry smart_search in ~30 seconds.`
+            text: `Index is still being built (${formatProgressValue(lastPct)}% complete). Indexing large projects can take a few minutes. Please wait and retry smart_search in ~30 seconds.`
           }]
         };
       }
@@ -18484,8 +18514,7 @@ ${available}`
       const lines = [
         `Index status for ${rootDir}`,
         `  Status: ${prog.status}`,
-        `  Progress: ${prog.percent}% (${prog.filesProcessed}/${prog.filesTotal} files)`,
-        `  Chunks indexed: ${prog.chunksIndexed}`
+        `  Progress: ${formatIndexProgress(prog.percent, prog.filesProcessed, prog.filesTotal, prog.chunksIndexed, prog.chunksTotal)}`
       ];
       if (prog.status === "done" && prog.finishedAt) {
         lines.push(`  Completed in ${((prog.finishedAt - prog.startedAt) / 1e3).toFixed(1)}s`);
@@ -18572,10 +18601,16 @@ async function main() {
         if (progress.status === "indexing") {
           emitProgress(
             "indexing",
-            `${progress.percent}% ${progress.filesProcessed}/${progress.filesTotal} files, ${progress.chunksIndexed} chunks`
+            formatIndexProgress(
+              progress.percent,
+              progress.filesProcessed,
+              progress.filesTotal,
+              progress.chunksIndexed,
+              progress.chunksTotal
+            )
           );
         }
-      }, 1e3);
+      }, 250);
       const indexResult = await indexProject(projectRoot, { force });
       if (progressTimer) clearInterval(progressTimer);
       progressTimer = void 0;

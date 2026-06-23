@@ -6,6 +6,9 @@ const DEFAULT_QUERY_PROMPT = "Instruct: Given a coding question, retrieve releva
 const DEFAULT_MAX_BATCH_SIZE = 64;
 const DEFAULT_MAX_CONCURRENCY = 4;
 
+type EmbeddingProgressHandler = ((processed: number) => void) | null;
+let embeddingProgressHandler: EmbeddingProgressHandler = null;
+
 export class F2LLMEmbeddingFunction extends TextEmbeddingFunction {
   readonly #baseUrl: string;
   readonly #model: string;
@@ -36,11 +39,12 @@ export class F2LLMEmbeddingFunction extends TextEmbeddingFunction {
   async #embedBatch(texts: string[], mode: "query" | "doc"): Promise<number[][]> {
     if (texts.length === 0) return [];
     const inputs = mode === "query" ? texts.map((t) => this.#queryPrompt + t) : texts;
+    const batchSize = mode === "doc" && embeddingProgressHandler ? Math.min(this.#maxBatchSize, 8) : this.#maxBatchSize;
     const batches: Array<{ offset: number; texts: string[] }> = [];
     const allResults: number[][] = new Array(inputs.length);
 
-    for (let i = 0; i < inputs.length; i += this.#maxBatchSize) {
-      batches.push({ offset: i, texts: inputs.slice(i, i + this.#maxBatchSize) });
+    for (let i = 0; i < inputs.length; i += batchSize) {
+      batches.push({ offset: i, texts: inputs.slice(i, i + batchSize) });
     }
 
     let nextBatch = 0;
@@ -60,6 +64,7 @@ export class F2LLMEmbeddingFunction extends TextEmbeddingFunction {
           data: Array<{ embedding: number[]; index: number }>;
         };
         for (const d of data.data) allResults[batch.offset + d.index] = d.embedding;
+        if (mode === "doc") embeddingProgressHandler?.(batch.texts.length);
       }
     });
 
@@ -111,6 +116,10 @@ export function getEmbeddingFunction(projectRoot?: string): F2LLMEmbeddingFuncti
 
 export function isEmbeddingAvailable(projectRoot?: string): boolean {
   return getEmbeddingFunction(projectRoot) !== null;
+}
+
+export function setEmbeddingProgressHandler(handler: EmbeddingProgressHandler): void {
+  embeddingProgressHandler = handler;
 }
 
 export function clearEmbeddingFunctionCache(): void {

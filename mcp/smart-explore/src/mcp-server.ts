@@ -42,6 +42,14 @@ import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const MAX_OUTLINE_DIRECTORY_FILES = 200;
+function formatProgressValue(value: number, digits = 1): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(digits);
+}
+
+function formatIndexProgress(percent: number, filesProcessed: number, filesTotal: number, chunksIndexed: number, chunksTotal: number): string {
+  return `${formatProgressValue(percent)}% (${formatProgressValue(filesProcessed, 2)}/${filesTotal} files, ${chunksIndexed}/${chunksTotal} chunks)`;
+}
+
 const tools = [
   {
     name: 'smart_search',
@@ -112,7 +120,7 @@ Try smart_index to rebuild.` }], isError: true };
         return {
           content: [{
             type: 'text' as const,
-            text: `Index is still being built (${lastPct}% complete). Indexing large projects can take a few minutes. Please wait and retry smart_search in ~30 seconds.`,
+            text: `Index is still being built (${formatProgressValue(lastPct)}% complete). Indexing large projects can take a few minutes. Please wait and retry smart_search in ~30 seconds.`,
           }],
         };
       }
@@ -411,8 +419,7 @@ Try smart_index to rebuild.` }], isError: true };
       const lines = [
         `Index status for ${rootDir}`,
         `  Status: ${prog.status}`,
-        `  Progress: ${prog.percent}% (${prog.filesProcessed}/${prog.filesTotal} files)`,
-        `  Chunks indexed: ${prog.chunksIndexed}`,
+        `  Progress: ${formatIndexProgress(prog.percent, prog.filesProcessed, prog.filesTotal, prog.chunksIndexed, prog.chunksTotal)}`,
       ];
       if (prog.status === 'done' && prog.finishedAt) {
         lines.push(`  Completed in ${((prog.finishedAt - prog.startedAt) / 1000).toFixed(1)}s`);
@@ -502,10 +509,16 @@ async function main() {
         if (progress.status === 'indexing') {
           emitProgress(
             'indexing',
-            `${progress.percent}% ${progress.filesProcessed}/${progress.filesTotal} files, ${progress.chunksIndexed} chunks`,
+            formatIndexProgress(
+              progress.percent,
+              progress.filesProcessed,
+              progress.filesTotal,
+              progress.chunksIndexed,
+              progress.chunksTotal,
+            ),
           );
         }
-      }, 1000);
+      }, 250);
       const indexResult = await indexProject(projectRoot, { force });
       if (progressTimer) clearInterval(progressTimer);
       progressTimer = undefined;
