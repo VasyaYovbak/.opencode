@@ -37,12 +37,14 @@
     "tree-sitter-typescript": "^0.23.2"
   },
   "bin": {
-    "smart-explore-mcp": "./scripts/mcp-server.cjs"
+    "smart-explore-mcp": "./scripts/mcp-server.cjs",
+    "smart-explore": "./scripts/smart-explore.cjs"
   },
   "scripts": {
     "build": "node scripts/build.js",
     "start": "node scripts/mcp-server.cjs",
-    "smart-explore-mcp": "node scripts/mcp-server.cjs"
+    "smart-explore-mcp": "node scripts/mcp-server.cjs",
+    "smart-explore": "node scripts/smart-explore.cjs"
   },
   "pnpm": {
     "peerDependencyRules": {

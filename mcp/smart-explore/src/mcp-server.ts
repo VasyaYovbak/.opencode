@@ -30,7 +30,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { formatSearchResults } from './search.js';
+import { formatSearchResults, loadSearchPreviewMode } from './search.js';
 import { parseFile, formatFoldedView, unfoldSymbolFromFolded } from './parser.js';
 import { getDirectoryOutline, getFileOutline, warmDirectoryOutlineCache } from './outline-cache.js';
 import { findCallers, findCallees, relatedFiles } from './relations.js';
@@ -54,27 +54,26 @@ const tools = [
   {
     name: 'smart_search',
     description:
-      'Search codebase for symbols, functions, classes, and code chunks using hybrid vector + BM25 search (or BM25-only if no embedding model configured). Returns matching chunks with file paths and anchors, grouped by file. Use path parameter to scope the search. If the index does not exist, indexing starts automatically and this call blocks until it completes (up to 90s).',
+      'Semantic + BM25 code search. Use for concepts, behavior, "where is X handled?", unknown symbol names — not exact strings (use Grep). Auto-builds index on first call (blocks up to 90s). Returns ranked chunks grouped by file.',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Search query — natural language or code terms. Matched against function bodies, class outlines, markdown sections, and file content.',
+          description: 'Natural language or code terms.',
         },
         path: {
           type: 'string',
-          description:
-            'Root directory to search (default: current working directory)',
+          description: 'Root dir (default: cwd)',
         },
         max_results: {
           type: 'number',
-          description: 'Maximum results to return (default: 20)',
+          description: 'Max results (default: 20)',
         },
         file_pattern: {
           type: 'string',
           description:
-            'OPTIONAL — omit by default. The index already covers all code files. Use ONLY to narrow results to a specific file extension or directory. Pass a simple substring: ".py", "src/services", "test". Supports * as wildcard (e.g. "*.py" matches .py files). Do NOT use brace expansion like "{ts,tsx}" or glob paths like "**/*.py" — these are not supported and will return 0 matches.',
+            'Substring or *.wildcard to narrow by ext/dir. No {brace} or **/glob.',
         },
       },
       required: ['query'],
@@ -134,7 +133,7 @@ Try smart_index to rebuild.` }], isError: true };
 
       try {
         const rows: SearchRow[] = await store.search(args.query, filePattern, maxResults);
-        const formatted = formatSearchResults(args.query, rows, store.hasEmbedding);
+        const formatted = formatSearchResults(args.query, rows, store.hasEmbedding, loadSearchPreviewMode());
         return { content: [{ type: 'text' as const, text: formatted }] };
       } finally {
         await store.close();
@@ -144,18 +143,17 @@ Try smart_index to rebuild.` }], isError: true };
   {
     name: 'smart_unfold',
     description:
-      'Expand a specific symbol (function, class, method) from a file. Returns the full source code of just that symbol. Use after smart_search or smart_outline to read specific code.',
+      'Return full source of one named symbol (function/class/method). Use after smart_search or smart_outline instead of Read for code.',
     inputSchema: {
       type: 'object',
       properties: {
         file_path: {
           type: 'string',
-          description: 'Path to the source file',
+          description: 'Source file path',
         },
         symbol_name: {
           type: 'string',
-          description:
-            'Name of the symbol to unfold (function, class, method, etc.)',
+          description: 'Symbol name (function/class/method)',
         },
       },
       required: ['file_path', 'symbol_name'],
@@ -193,13 +191,13 @@ Try smart_index to rebuild.` }], isError: true };
   {
     name: 'smart_outline',
     description:
-      'Get structural outline of a file or directory — shows all symbols (functions, classes, methods, types) with signatures but bodies folded. Much cheaper than reading the full source.',
+      'Structural outline of a file or directory: all symbols with signatures, bodies folded. Cheaper than Read for code.',
     inputSchema: {
       type: 'object',
       properties: {
         file_path: {
           type: 'string',
-          description: 'Path to the file or directory',
+          description: 'File or directory path',
         },
       },
       required: ['file_path'],
@@ -263,26 +261,26 @@ Try smart_index to rebuild.` }], isError: true };
   {
     name: 'smart_callers',
     description:
-      'Find incoming call edges for a symbol. Returns functions/methods that call the requested symbol, with call-site lines and resolved targets when available.',
+      'Find who calls a symbol. Returns callers with call-site lines. Use for "who calls X?" instead of grepping.',
     inputSchema: {
       type: 'object',
       properties: {
         symbol_name: {
           type: 'string',
-          description: 'Function or method name to find callers for, e.g. parseFile',
+          description: 'Symbol name',
         },
         path: {
           type: 'string',
-          description: 'Root directory to scan (default: current working directory)',
+          description: 'Root dir (default: cwd)',
         },
         max_results: {
           type: 'number',
-          description: 'Maximum call edges to return (default: 40)',
+          description: 'Max edges (default: 40)',
         },
         file_pattern: {
           type: 'string',
           description:
-            'OPTIONAL — omit by default. Use ONLY to narrow to a specific file extension or directory. Pass a simple substring: ".py", "src/services". Supports * as wildcard (e.g. "*.py"). Do NOT use brace expansion like "{ts,tsx}" — not supported.',
+            'Substring or *.wildcard to narrow by ext/dir. No {brace} or **/glob.',
         },
       },
       required: ['symbol_name'],
@@ -299,26 +297,26 @@ Try smart_index to rebuild.` }], isError: true };
   {
     name: 'smart_callees',
     description:
-      'Find outgoing call edges for a symbol. Returns functions/methods called by the requested symbol, with call-site lines and resolved targets when available.',
+      'Find what a symbol calls. Returns callees with call-site lines. Use for "what does X call?" instead of grepping.',
     inputSchema: {
       type: 'object',
       properties: {
         symbol_name: {
           type: 'string',
-          description: 'Function or method name to inspect, e.g. searchCodebase',
+          description: 'Symbol name',
         },
         path: {
           type: 'string',
-          description: 'Root directory to scan (default: current working directory)',
+          description: 'Root dir (default: cwd)',
         },
         max_results: {
           type: 'number',
-          description: 'Maximum call edges to return (default: 40)',
+          description: 'Max edges (default: 40)',
         },
         file_pattern: {
           type: 'string',
           description:
-            'OPTIONAL — omit by default. Use ONLY to narrow to a specific file extension or directory. Pass a simple substring: ".py", "src/services". Supports * as wildcard (e.g. "*.py"). Do NOT use brace expansion like "{ts,tsx}" — not supported.',
+            'Substring or *.wildcard to narrow by ext/dir. No {brace} or **/glob.',
         },
       },
       required: ['symbol_name'],
@@ -335,21 +333,21 @@ Try smart_index to rebuild.` }], isError: true };
   {
     name: 'smart_related_files',
     description:
-      'Show dependency/file graph around one file: outgoing relative imports, incoming imports, and likely test files.',
+      'Import graph around one file: outgoing imports, incoming importers, likely test files.',
     inputSchema: {
       type: 'object',
       properties: {
         file_path: {
           type: 'string',
-          description: 'File to inspect, relative to path or absolute',
+          description: 'File path (relative to path or absolute)',
         },
         path: {
           type: 'string',
-          description: 'Project root directory (default: current working directory)',
+          description: 'Root dir (default: cwd)',
         },
         max_results: {
           type: 'number',
-          description: 'Maximum files per section (default: 40)',
+          description: 'Max files per section (default: 40)',
         },
       },
       required: ['file_path'],
@@ -363,17 +361,17 @@ Try smart_index to rebuild.` }], isError: true };
   {
     name: 'smart_index',
     description:
-      'Force rebuild the search index for a project. Parses all code files, chunks them into functions/classes/sections, computes embeddings (if configured), and stores them in a LanceDB index. Use this when the index is missing, corrupted, or you want to pick up embedding model changes.',
+      'Force rebuild search index. Use when index is missing, corrupted, or after embedding model changes.',
     inputSchema: {
       type: 'object',
       properties: {
         path: {
           type: 'string',
-          description: 'Root directory of the project to index (default: current working directory)',
+          description: 'Root dir (default: cwd)',
         },
         force: {
           type: 'boolean',
-          description: 'If true, reindex all files even if unchanged (default: false)',
+          description: 'Reindex unchanged files too (default: false)',
         },
       },
     },
@@ -396,13 +394,13 @@ Try smart_index to rebuild.` }], isError: true };
   {
     name: 'smart_index_status',
     description:
-      'Check the indexing progress for a project. Returns status (idle/indexing/done/error), percentage complete, file counts, and chunk counts. Use this to poll when smart_search reports indexing is in progress.',
+      'Poll index build progress. Use when smart_search reports indexing in progress.',
     inputSchema: {
       type: 'object',
       properties: {
         path: {
           type: 'string',
-          description: 'Root directory of the project (default: current working directory)',
+          description: 'Root dir (default: cwd)',
         },
       },
     },

@@ -1120,12 +1120,14 @@ function formatSymbol(sym: CodeSymbol, indent: string): string {
   const lineRange = sym.lineStart === sym.lineEnd
     ? `L${sym.lineStart + 1}`
     : `L${sym.lineStart + 1}-${sym.lineEnd + 1}`;
+  const span = sym.lineEnd - sym.lineStart + 1;
+  const showSpan = span > 100 && !!(sym.children && sym.children.length > 0);
 
   const anchor = anchorRange(sym);
   if (anchor) {
-    parts.push(`${indent}${icon} ${sym.name}${exportTag} ${anchor}`);
+    parts.push(`${indent}${icon} ${sym.name}${exportTag} ${anchor}${showSpan ? ` (${span} lines)` : ""}`);
   } else {
-    parts.push(`${indent}${icon} ${sym.name}${exportTag} (${lineRange})`);
+    parts.push(`${indent}${icon} ${sym.name}${exportTag} (${lineRange}${showSpan ? `, ${span} lines` : ""})`);
   }
   parts.push(`${indent}  ${sym.signature}`);
 
@@ -1176,18 +1178,34 @@ export function unfoldSymbolFromFolded(
   file: FoldedFile,
   symbolName: string
 ): string | null {
-  const findSymbol = (symbols: CodeSymbol[]): CodeSymbol | null => {
+  const findSymbol = (symbols: CodeSymbol[], name: string): CodeSymbol | null => {
     for (const sym of symbols) {
-      if (sym.name === symbolName) return sym;
+      if (sym.name === name) return sym;
       if (sym.children) {
-        const found = findSymbol(sym.children);
+        const found = findSymbol(sym.children, name);
         if (found) return found;
       }
     }
     return null;
   };
 
-  const symbol = findSymbol(file.symbols);
+  let symbol: CodeSymbol | null = null;
+
+  if (symbolName.includes(".")) {
+    const parts = symbolName.split(".");
+    let currentSyms: CodeSymbol[] = file.symbols;
+    let found: CodeSymbol | null = null;
+    for (const part of parts) {
+      found = findSymbol(currentSyms, part);
+      if (!found) { found = null; break; }
+      currentSyms = found.children ?? [];
+    }
+    if (found) symbol = found;
+  }
+
+  if (!symbol) {
+    symbol = findSymbol(file.symbols, symbolName);
+  }
   if (!symbol) return null;
 
   const lines = content.split("\n");

@@ -48,16 +48,12 @@ const TREE_SITTER_EXTERNAL = [
   'reflect-metadata',
 ];
 
-console.log(`Building mcp-server v${version}...`);
-
-await build({
-  entryPoints: [`${__dirname}/../src/mcp-server.ts`],
+const COMMON_BUILD_OPTIONS = {
   bundle: true,
   platform: 'node',
   target: 'node18',
   format: 'cjs',
-  outfile: `${__dirname}/mcp-server.cjs`,
-  minify: false,  // keep readable
+  minify: false,
   logLevel: 'info',
   external: TREE_SITTER_EXTERNAL,
   define: {
@@ -66,25 +62,40 @@ await build({
   banner: {
     js: '#!/usr/bin/env node',
   },
-});
+};
 
-// Strip hardcoded __dirname/__filename paths injected by esbuild at build time.
-// These shadow Node's runtime CJS globals and break path resolution on other machines.
-const outFile = `${__dirname}/mcp-server.cjs`;
-let content = readFileSync(outFile, 'utf-8');
-const before = content.length;
-const str = `(?:"[^"]*"|'[^']*')`;
-for (const id of ['__dirname', '__filename']) {
-  content = content.replace(new RegExp(`\\bvar ${id}\\s*=\\s*${str},\\s*`, 'g'), 'var ');
-  content = content.replace(new RegExp(`\\bvar ${id}\\s*=\\s*${str};\\s*`, 'g'), '');
-  content = content.replace(new RegExp(`,\\s*${id}\\s*=\\s*${str}`, 'g'), '');
-}
-content = content.replace(/\bvar\s*;/g, '');
-if (content.length !== before) {
-  writeFileSync(outFile, content);
-  console.log(`  Stripped hardcoded __dirname/__filename (${before - content.length} bytes removed)`);
-}
+const TARGETS = [
+  { entry: 'src/mcp-server.ts', outfile: 'scripts/mcp-server.cjs', label: 'mcp-server' },
+  { entry: 'src/cli.ts',        outfile: 'scripts/smart-explore.cjs', label: 'cli' },
+];
 
-chmodSync(outFile, 0o755);
-const stats = statSync(outFile);
-console.log(`✓ scripts/mcp-server.cjs built (${(stats.size / 1024).toFixed(1)} KB)`);
+for (const target of TARGETS) {
+  console.log(`Building ${target.label} v${version}...`);
+
+  await build({
+    ...COMMON_BUILD_OPTIONS,
+    entryPoints: [`${__dirname}/../${target.entry}`],
+    outfile: `${__dirname}/../${target.outfile}`,
+  });
+
+  // Strip hardcoded __dirname/__filename paths injected by esbuild at build time.
+  // These shadow Node's runtime CJS globals and break path resolution on other machines.
+  const outFile = `${__dirname}/../${target.outfile}`;
+  let content = readFileSync(outFile, 'utf-8');
+  const before = content.length;
+  const str = `(?:"[^"]*"|'[^']*')`;
+  for (const id of ['__dirname', '__filename']) {
+    content = content.replace(new RegExp(`\\bvar ${id}\\s*=\\s*${str},\\s*`, 'g'), 'var ');
+    content = content.replace(new RegExp(`\\bvar ${id}\\s*=\\s*${str};\\s*`, 'g'), '');
+    content = content.replace(new RegExp(`,\\s*${id}\\s*=\\s*${str}`, 'g'), '');
+  }
+  content = content.replace(/\bvar\s*;/g, '');
+  if (content.length !== before) {
+    writeFileSync(outFile, content);
+    console.log(`  Stripped hardcoded __dirname/__filename (${before - content.length} bytes removed)`);
+  }
+
+  chmodSync(outFile, 0o755);
+  const stats = statSync(outFile);
+  console.log(`✓ ${target.outfile} built (${(stats.size / 1024).toFixed(1)} KB)`);
+}

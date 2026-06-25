@@ -1,7 +1,22 @@
 import { readFile, readdir, stat } from "node:fs/promises";
+import { readFileSync, existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { loadUserGrammars } from "./parser.js";
 import type { SearchRow } from "./index-store.js";
+
+export type SearchPreviewMode = "lines" | "signature";
+
+export function loadSearchPreviewMode(): SearchPreviewMode {
+  const configPath = join(homedir(), ".config", "opencode", "smart-explore-config.json");
+  if (!existsSync(configPath)) return "lines";
+  try {
+    const raw = JSON.parse(readFileSync(configPath, "utf-8"));
+    return raw?.search_preview_mode === "signature" ? "signature" : "lines";
+  } catch {
+    return "lines";
+  }
+}
 
 const CODE_EXTENSIONS = new Set([
   ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
@@ -197,10 +212,129 @@ const SYMBOL_ICONS: Record<string, string> = {
   section: "§", code: "⌘", text: "¶", metadata: "◊", reference: "↗",
 };
 
+export interface MergedSearchRow extends SearchRow {
+  queryIndices: number[];
+  bestDistance: number;
+}
+
+export function mergeSearchResults(queryResults: SearchRow[][]): MergedSearchRow[] {
+  const chunkMap = new Map<string, MergedSearchRow>();
+
+  for (let qi = 0; qi < queryResults.length; qi++) {
+    for (const row of queryResults[qi]) {
+      const key = `${row.file_path}:${row.line_start}:${row.line_end}`;
+      const existing = chunkMap.get(key);
+      if (existing) {
+        if (!existing.queryIndices.includes(qi)) existing.queryIndices.push(qi);
+        if (row._distance < existing.bestDistance) {
+          existing.bestDistance = row._distance;
+        }
+      } else {
+        chunkMap.set(key, { ...row, queryIndices: [qi], bestDistance: row._distance });
+      }
+    }
+  }
+
+  return [...chunkMap.values()].sort((a, b) => {
+    if (b.queryIndices.length !== a.queryIndices.length)
+      return b.queryIndices.length - a.queryIndices.length;
+    return a.bestDistance - b.bestDistance;
+  });
+}
+
+export function formatMultiSearchResults(
+  queries: string[],
+  rows: MergedSearchRow[],
+  hasEmbedding: boolean,
+  previewMode: SearchPreviewMode = "lines",
+): string {
+  const parts: string[] = [];
+  const mode = hasEmbedding ? "hybrid (vector + BM25)" : "BM25";
+  const total = queries.length;
+  const rawTotal = rows.reduce((s, r) => s + r.queryIndices.length, 0);
+
+  parts.push(`🔍 Smart Search: ${total} queries → ${rows.length} unique results (${mode}, ${rawTotal} raw hits)`);
+  queries.forEach((q, i) => parts.push(`   ${i + 1}: "${q}"`));
+  parts.push("");
+
+  if (rows.length === 0) {
+    parts.push("   No matches found.");
+    parts.push("");
+    parts.push("   Try smart_index to rebuild the index, or smart_outline to browse files.");
+    return parts.join("\n");
+  }
+
+  parts.push("── Results by File ──");
+  parts.push("");
+
+  const byFile = new Map<string, MergedSearchRow[]>();
+  for (const row of rows) {
+    const list = byFile.get(row.file_path) ?? [];
+    list.push(row);
+    byFile.set(row.file_path, list);
+  }
+
+  const sortedFiles = [...byFile.entries()].sort((a, b) => {
+    const aQm = a[1].reduce((s, r) => s + r.queryIndices.length, 0);
+    const bQm = b[1].reduce((s, r) => s + r.queryIndices.length, 0);
+    if (bQm !== aQm) return bQm - aQm;
+    if (b[1].length !== a[1].length) return b[1].length - a[1].length;
+    return a[0].localeCompare(b[0]);
+  });
+
+  for (const [, fileRows] of sortedFiles) {
+    fileRows.sort((a, b) => {
+      if (b.queryIndices.length !== a.queryIndices.length)
+        return b.queryIndices.length - a.queryIndices.length;
+      return a.bestDistance - b.bestDistance;
+    });
+  }
+
+  for (const [filePath, fileRows] of sortedFiles) {
+    const lang = fileRows[0].language || "text";
+    parts.push(`📁 ${filePath} (${lang}, ${fileRows.length} match${fileRows.length > 1 ? "es" : ""})`);
+
+    for (const row of fileRows) {
+      const icon = SYMBOL_ICONS[row.kind] || "·";
+      const range = row.line_start === row.line_end
+        ? `L${row.line_start + 1}`
+        : `L${row.line_start + 1}-L${row.line_end + 1}`;
+      const anchor = row.hash_start || range;
+      const name = row.symbol_name || "(text chunk)";
+      const badge = `${row.queryIndices.length}/${total}`;
+      const span = row.line_end - row.line_start + 1;
+      const spanTag = span > 50 ? ` (${span} lines)` : "";
+
+      parts.push(`  ${icon} ${name} ${anchor}${spanTag} [${badge}]`);
+      if (previewMode === "signature" && row.signature) {
+        parts.push(`    ${row.signature.slice(0, 200)}`);
+      } else {
+        const contentLines = row.content.split("\n").slice(0, 8);
+        for (const line of contentLines) {
+          const trimmed = line.replace(/\s+$/, "");
+          if (trimmed.length > 0) parts.push(`    ${trimmed.slice(0, 120)}`);
+        }
+        if (row.content.split("\n").length > 8) {
+          parts.push("    ...");
+        }
+      }
+    }
+    parts.push("");
+  }
+
+  parts.push("── Actions ──");
+  parts.push('  To see full code: use smart_unfold with file_path and symbol_name');
+  parts.push('  To see file structure: use smart_outline with file_path');
+  parts.push('  To reindex: use smart_index');
+
+  return parts.join("\n");
+}
+
 export function formatSearchResults(
   query: string,
   rows: SearchRow[],
   hasEmbedding: boolean,
+  previewMode: SearchPreviewMode = "lines",
 ): string {
   const parts: string[] = [];
   const mode = hasEmbedding ? "hybrid (vector + BM25)" : "BM25";
@@ -249,15 +383,21 @@ export function formatSearchResults(
         : `L${row.line_start + 1}-L${row.line_end + 1}`;
       const anchor = row.hash_start || range;
       const name = row.symbol_name || "(text chunk)";
+      const span = row.line_end - row.line_start + 1;
+      const spanTag = span > 50 ? ` (${span} lines)` : "";
 
-      parts.push(`  ${icon} ${name} ${anchor}`);
-      const contentLines = row.content.split("\n").slice(0, 8);
-      for (const line of contentLines) {
-        const trimmed = line.replace(/\s+$/, "");
-        if (trimmed.length > 0) parts.push(`    ${trimmed.slice(0, 120)}`);
-      }
-      if (row.content.split("\n").length > 8) {
-        parts.push("    ...");
+      parts.push(`  ${icon} ${name} ${anchor}${spanTag}`);
+      if (previewMode === "signature" && row.signature) {
+        parts.push(`    ${row.signature.slice(0, 200)}`);
+      } else {
+        const contentLines = row.content.split("\n").slice(0, 8);
+        for (const line of contentLines) {
+          const trimmed = line.replace(/\s+$/, "");
+          if (trimmed.length > 0) parts.push(`    ${trimmed.slice(0, 120)}`);
+        }
+        if (row.content.split("\n").length > 8) {
+          parts.push("    ...");
+        }
       }
     }
     parts.push("");

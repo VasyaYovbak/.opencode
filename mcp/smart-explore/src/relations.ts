@@ -81,10 +81,12 @@ async function safeReadFile(filePath: string): Promise<string | null> {
   }
 }
 
-async function collectProject(rootDir: string, filePattern?: string): Promise<ParsedProject> {
+async function collectProject(rootDir: string, filePattern?: string, pathPrefix?: string): Promise<ParsedProject> {
   const files: ParsedProject["files"] = [];
+  const normalizedPrefix = pathPrefix ? pathPrefix.replace(/^\.\//, '').replace(/\/$/, '') : null;
   for await (const absolutePath of walkDir(rootDir)) {
     const relativePath = relative(rootDir, absolutePath);
+    if (normalizedPrefix && !relativePath.startsWith(normalizedPrefix)) continue;
     if (filePattern && !relativePath.toLowerCase().includes(filePattern.toLowerCase())) continue;
     const content = await safeReadFile(absolutePath);
     if (!content) continue;
@@ -198,14 +200,14 @@ function findEnclosingSymbol(symbols: ParsedProject["symbols"], lineIndex: numbe
   return best;
 }
 
-export async function findCallers(rootDir: string, symbolName: string, options: { maxResults?: number; filePattern?: string } = {}): Promise<string> {
-  const project = await collectProject(rootDir, options.filePattern);
+export async function findCallers(rootDir: string, symbolName: string, options: { maxResults?: number; filePattern?: string; pathPrefix?: string } = {}): Promise<string> {
+  const project = await collectProject(rootDir, options.filePattern, options.pathPrefix);
   const matches = project.calls.filter(edge => edge.callee === symbolName || edge.callText === symbolName || edge.callText.endsWith(`.${symbolName}`));
   return formatCallEdges("Incoming Call Edges", symbolName, matches.slice(0, options.maxResults || 40), project.calls.length);
 }
 
-export async function findCallees(rootDir: string, symbolName: string, options: { maxResults?: number; filePattern?: string } = {}): Promise<string> {
-  const project = await collectProject(rootDir, options.filePattern);
+export async function findCallees(rootDir: string, symbolName: string, options: { maxResults?: number; filePattern?: string; pathPrefix?: string } = {}): Promise<string> {
+  const project = await collectProject(rootDir, options.filePattern, options.pathPrefix);
   const matches = project.calls.filter(edge => edge.caller === symbolName || edge.caller.endsWith(`.${symbolName}`));
   matches.sort((a, b) => Number(Boolean(b.calleeFile)) - Number(Boolean(a.calleeFile)));
   return formatCallEdges("Outgoing Call Edges", symbolName, matches.slice(0, options.maxResults || 40), project.calls.length);
@@ -225,11 +227,14 @@ function formatCallEdges(title: string, symbolName: string, edges: CallEdge[], t
   return parts.join("\n");
 }
 
-export async function relatedFiles(rootDir: string, filePath: string, options: { maxResults?: number } = {}): Promise<string> {
+export async function relatedFiles(rootDir: string, filePath: string, options: { maxResults?: number; pathPrefix?: string } = {}): Promise<string> {
   const absoluteTarget = resolve(rootDir, filePath);
   const targetRel = relative(rootDir, absoluteTarget);
   const project = await collectProject(rootDir);
   const importsByFile = new Map<string, string[]>();
+
+  const normalizedPrefix = options.pathPrefix ? options.pathPrefix.replace(/^\.\//, '').replace(/\/$/, '') : null;
+  const matchesPrefix = (p: string) => !normalizedPrefix || p.startsWith(normalizedPrefix);
 
   for (const file of project.files) {
     importsByFile.set(file.relativePath, extractImportSpecifiers(file.content));
@@ -237,15 +242,17 @@ export async function relatedFiles(rootDir: string, filePath: string, options: {
 
   const outgoing = (importsByFile.get(targetRel) || [])
     .map(spec => resolveImport(rootDir, targetRel, spec))
-    .filter((item): item is string => Boolean(item));
+    .filter((item): item is string => Boolean(item))
+    .filter(matchesPrefix);
 
   const incoming: string[] = [];
   for (const [sourceFile, specs] of importsByFile) {
     if (sourceFile === targetRel) continue;
+    if (!matchesPrefix(sourceFile)) continue;
     if (specs.some(spec => resolveImport(rootDir, sourceFile, spec) === targetRel)) incoming.push(sourceFile);
   }
 
-  const tests = findLikelyTests(project.files.map(f => f.relativePath), targetRel);
+  const tests = findLikelyTests(project.files.map(f => f.relativePath), targetRel).filter(matchesPrefix);
   return formatRelatedFiles(targetRel, outgoing, incoming, tests, options.maxResults || 40);
 }
 

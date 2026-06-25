@@ -6,5 +6,7 @@
     "queryPrompt": "Instruct: Given a coding question, retrieve relevant code or docs.\nQuery: ",
     "maxBatchSize": 32,
     "maxConcurrency": 4
-  }
+  },
+  "force_bash_execution": true,
+  "search_preview_mode": "signature"
 }

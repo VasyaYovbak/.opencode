@@ -219,7 +219,7 @@ export class IndexStore {
     await this.#table.delete(`file_path = '${escaped}'`);
   }
 
-  async search(query: string, filePattern: string | null, limit: number): Promise<SearchRow[]> {
+  async search(query: string, filePattern: string | null, limit: number, pathPrefix?: string | null): Promise<SearchRow[]> {
     const overfetch = Math.min(limit * 3, 100);
 
     let q: any;
@@ -229,10 +229,17 @@ export class IndexStore {
       q = this.#table.search(query, "fts").limit(overfetch);
     }
 
+    const conditions: string[] = [];
     if (filePattern) {
-      // Convert glob-style patterns (*.py) to SQL LIKE (%.py)
       const likePattern = filePattern.replace(/\*/g, '%');
-      q = q.where(`file_path LIKE '%${escapeSqlString(likePattern)}%'`);
+      conditions.push(`file_path LIKE '%${escapeSqlString(likePattern)}%'`);
+    }
+    if (pathPrefix) {
+      const normalized = pathPrefix.replace(/^\.\//, '').replace(/\/$/, '');
+      conditions.push(`file_path LIKE '${escapeSqlString(normalized)}%'`);
+    }
+    if (conditions.length > 0) {
+      q = q.where(conditions.join(' AND '));
     }
 
     if (this.#hasEmbedding && this.#rrf) {

@@ -15448,6 +15448,8 @@ var StdioServerTransport = class {
 
 // src/search.ts
 var import_promises = require("node:fs/promises");
+var import_node_fs3 = require("node:fs");
+var import_node_os3 = require("node:os");
 var import_node_path3 = require("node:path");
 
 // src/parser.ts
@@ -16480,11 +16482,13 @@ function formatSymbol(sym, indent) {
   const icon = getSymbolIcon(sym.kind);
   const exportTag = sym.exported ? " [exported]" : "";
   const lineRange = sym.lineStart === sym.lineEnd ? `L${sym.lineStart + 1}` : `L${sym.lineStart + 1}-${sym.lineEnd + 1}`;
+  const span = sym.lineEnd - sym.lineStart + 1;
+  const showSpan = span > 100 && !!(sym.children && sym.children.length > 0);
   const anchor = anchorRange(sym);
   if (anchor) {
-    parts.push(`${indent}${icon} ${sym.name}${exportTag} ${anchor}`);
+    parts.push(`${indent}${icon} ${sym.name}${exportTag} ${anchor}${showSpan ? ` (${span} lines)` : ""}`);
   } else {
-    parts.push(`${indent}${icon} ${sym.name}${exportTag} (${lineRange})`);
+    parts.push(`${indent}${icon} ${sym.name}${exportTag} (${lineRange}${showSpan ? `, ${span} lines` : ""})`);
   }
   parts.push(`${indent}  ${sym.signature}`);
   if (sym.jsdoc) {
@@ -16533,17 +16537,34 @@ function getSymbolIcon(kind) {
   return icons[kind] || "\xB7";
 }
 function unfoldSymbolFromFolded(content, filePath, file, symbolName) {
-  const findSymbol = (symbols) => {
+  const findSymbol = (symbols, name) => {
     for (const sym of symbols) {
-      if (sym.name === symbolName) return sym;
+      if (sym.name === name) return sym;
       if (sym.children) {
-        const found = findSymbol(sym.children);
+        const found = findSymbol(sym.children, name);
         if (found) return found;
       }
     }
     return null;
   };
-  const symbol = findSymbol(file.symbols);
+  let symbol = null;
+  if (symbolName.includes(".")) {
+    const parts = symbolName.split(".");
+    let currentSyms = file.symbols;
+    let found = null;
+    for (const part of parts) {
+      found = findSymbol(currentSyms, part);
+      if (!found) {
+        found = null;
+        break;
+      }
+      currentSyms = found.children ?? [];
+    }
+    if (found) symbol = found;
+  }
+  if (!symbol) {
+    symbol = findSymbol(file.symbols, symbolName);
+  }
   if (!symbol) return null;
   const lines = content.split("\n");
   if (file.language === "markdown" && symbol.kind === "section") {
@@ -16591,6 +16612,16 @@ ${slice.join("\n")}`;
 }
 
 // src/search.ts
+function loadSearchPreviewMode() {
+  const configPath = (0, import_node_path3.join)((0, import_node_os3.homedir)(), ".config", "opencode", "smart-explore-config.json");
+  if (!(0, import_node_fs3.existsSync)(configPath)) return "lines";
+  try {
+    const raw = JSON.parse((0, import_node_fs3.readFileSync)(configPath, "utf-8"));
+    return raw?.search_preview_mode === "signature" ? "signature" : "lines";
+  } catch {
+    return "lines";
+  }
+}
 var CODE_EXTENSIONS = /* @__PURE__ */ new Set([
   ".js",
   ".jsx",
@@ -16792,7 +16823,7 @@ var SYMBOL_ICONS = {
   metadata: "\u25CA",
   reference: "\u2197"
 };
-function formatSearchResults(query, rows, hasEmbedding) {
+function formatSearchResults(query, rows, hasEmbedding, previewMode = "lines") {
   const parts = [];
   const mode = hasEmbedding ? "hybrid (vector + BM25)" : "BM25";
   parts.push(`\u{1F50D} Smart Search: "${query}"`);
@@ -16827,14 +16858,20 @@ function formatSearchResults(query, rows, hasEmbedding) {
       const range = row.line_start === row.line_end ? `L${row.line_start + 1}` : `L${row.line_start + 1}-L${row.line_end + 1}`;
       const anchor = row.hash_start || range;
       const name = row.symbol_name || "(text chunk)";
-      parts.push(`  ${icon} ${name} ${anchor}`);
-      const contentLines = row.content.split("\n").slice(0, 8);
-      for (const line of contentLines) {
-        const trimmed = line.replace(/\s+$/, "");
-        if (trimmed.length > 0) parts.push(`    ${trimmed.slice(0, 120)}`);
-      }
-      if (row.content.split("\n").length > 8) {
-        parts.push("    ...");
+      const span = row.line_end - row.line_start + 1;
+      const spanTag = span > 50 ? ` (${span} lines)` : "";
+      parts.push(`  ${icon} ${name} ${anchor}${spanTag}`);
+      if (previewMode === "signature" && row.signature) {
+        parts.push(`    ${row.signature.slice(0, 200)}`);
+      } else {
+        const contentLines = row.content.split("\n").slice(0, 8);
+        for (const line of contentLines) {
+          const trimmed = line.replace(/\s+$/, "");
+          if (trimmed.length > 0) parts.push(`    ${trimmed.slice(0, 120)}`);
+        }
+        if (row.content.split("\n").length > 8) {
+          parts.push("    ...");
+        }
       }
     }
     parts.push("");
@@ -17065,7 +17102,7 @@ function evictIfNeeded() {
 // src/relations.ts
 var import_promises3 = require("node:fs/promises");
 var import_node_path5 = require("node:path");
-var import_node_fs3 = require("node:fs");
+var import_node_fs4 = require("node:fs");
 var CODE_EXTENSIONS2 = /* @__PURE__ */ new Set([
   ".js",
   ".jsx",
@@ -17213,10 +17250,12 @@ async function safeReadFile2(filePath) {
     return null;
   }
 }
-async function collectProject(rootDir, filePattern) {
+async function collectProject(rootDir, filePattern, pathPrefix) {
   const files = [];
+  const normalizedPrefix = pathPrefix ? pathPrefix.replace(/^\.\//, "").replace(/\/$/, "") : null;
   for await (const absolutePath of walkDir2(rootDir)) {
     const relativePath = (0, import_node_path5.relative)(rootDir, absolutePath);
+    if (normalizedPrefix && !relativePath.startsWith(normalizedPrefix)) continue;
     if (filePattern && !relativePath.toLowerCase().includes(filePattern.toLowerCase())) continue;
     const content = await safeReadFile2(absolutePath);
     if (!content) continue;
@@ -17312,12 +17351,12 @@ function findEnclosingSymbol(symbols, lineIndex) {
   return best;
 }
 async function findCallers(rootDir, symbolName, options = {}) {
-  const project = await collectProject(rootDir, options.filePattern);
+  const project = await collectProject(rootDir, options.filePattern, options.pathPrefix);
   const matches = project.calls.filter((edge) => edge.callee === symbolName || edge.callText === symbolName || edge.callText.endsWith(`.${symbolName}`));
   return formatCallEdges("Incoming Call Edges", symbolName, matches.slice(0, options.maxResults || 40), project.calls.length);
 }
 async function findCallees(rootDir, symbolName, options = {}) {
-  const project = await collectProject(rootDir, options.filePattern);
+  const project = await collectProject(rootDir, options.filePattern, options.pathPrefix);
   const matches = project.calls.filter((edge) => edge.caller === symbolName || edge.caller.endsWith(`.${symbolName}`));
   matches.sort((a, b) => Number(Boolean(b.calleeFile)) - Number(Boolean(a.calleeFile)));
   return formatCallEdges("Outgoing Call Edges", symbolName, matches.slice(0, options.maxResults || 40), project.calls.length);
@@ -17339,16 +17378,19 @@ async function relatedFiles(rootDir, filePath, options = {}) {
   const targetRel = (0, import_node_path5.relative)(rootDir, absoluteTarget);
   const project = await collectProject(rootDir);
   const importsByFile = /* @__PURE__ */ new Map();
+  const normalizedPrefix = options.pathPrefix ? options.pathPrefix.replace(/^\.\//, "").replace(/\/$/, "") : null;
+  const matchesPrefix = (p) => !normalizedPrefix || p.startsWith(normalizedPrefix);
   for (const file of project.files) {
     importsByFile.set(file.relativePath, extractImportSpecifiers(file.content));
   }
-  const outgoing = (importsByFile.get(targetRel) || []).map((spec) => resolveImport(rootDir, targetRel, spec)).filter((item) => Boolean(item));
+  const outgoing = (importsByFile.get(targetRel) || []).map((spec) => resolveImport(rootDir, targetRel, spec)).filter((item) => Boolean(item)).filter(matchesPrefix);
   const incoming = [];
   for (const [sourceFile, specs] of importsByFile) {
     if (sourceFile === targetRel) continue;
+    if (!matchesPrefix(sourceFile)) continue;
     if (specs.some((spec) => resolveImport(rootDir, sourceFile, spec) === targetRel)) incoming.push(sourceFile);
   }
-  const tests = findLikelyTests(project.files.map((f) => f.relativePath), targetRel);
+  const tests = findLikelyTests(project.files.map((f) => f.relativePath), targetRel).filter(matchesPrefix);
   return formatRelatedFiles(targetRel, outgoing, incoming, tests, options.maxResults || 40);
 }
 function extractImportSpecifiers(content) {
@@ -17373,7 +17415,7 @@ function resolveImport(rootDir, sourceRel, spec) {
     ...sourceEquivalentCandidates(base),
     ...["index.ts", "index.tsx", "index.js", "index.jsx"].map((name) => (0, import_node_path5.join)(base, name))
   ];
-  const found = candidates.find((candidate) => (0, import_node_fs3.existsSync)(candidate));
+  const found = candidates.find((candidate) => (0, import_node_fs4.existsSync)(candidate));
   return found ? (0, import_node_path5.relative)(rootDir, found) : null;
 }
 function sourceEquivalentCandidates(base) {
@@ -17409,7 +17451,7 @@ function formatFileList(files, maxResults) {
 // src/index-store.ts
 var import_lancedb = __toESM(require("@lancedb/lancedb"), 1);
 var import_node_path7 = require("node:path");
-var import_node_fs5 = require("node:fs");
+var import_node_fs6 = require("node:fs");
 var import_node_crypto = require("node:crypto");
 
 // src/embed.ts
@@ -17417,15 +17459,15 @@ var import_embedding = require("@lancedb/lancedb/embedding");
 var import_apache_arrow = require("apache-arrow");
 
 // src/config.ts
-var import_node_fs4 = require("node:fs");
+var import_node_fs5 = require("node:fs");
 var import_node_path6 = require("node:path");
-var import_node_os3 = require("node:os");
+var import_node_os4 = require("node:os");
 var DEFAULT_QUERY_PROMPT = "Instruct: Given a coding question, retrieve relevant code or docs.\nQuery: ";
 var DEFAULT_MAX_BATCH_SIZE = 64;
 var DEFAULT_MAX_CONCURRENCY = 4;
 var configCache = /* @__PURE__ */ new Map();
 function resolveUserConfigPath() {
-  const xdg = process.env.XDG_CONFIG_HOME?.trim() || (0, import_node_path6.join)((0, import_node_os3.homedir)(), ".config");
+  const xdg = process.env.XDG_CONFIG_HOME?.trim() || (0, import_node_path6.join)((0, import_node_os4.homedir)(), ".config");
   return (0, import_node_path6.join)(xdg, "opencode", "smart-explore-config.json");
 }
 function validateConfig(raw) {
@@ -17451,9 +17493,9 @@ function loadEmbeddingConfig(projectRoot) {
   if (configCache.has(cacheKey)) return configCache.get(cacheKey);
   if (projectRoot) {
     const projectConfigPath = (0, import_node_path6.join)(projectRoot, ".smart-explore.json");
-    if ((0, import_node_fs4.existsSync)(projectConfigPath)) {
+    if ((0, import_node_fs5.existsSync)(projectConfigPath)) {
       try {
-        const raw = JSON.parse((0, import_node_fs4.readFileSync)(projectConfigPath, "utf-8"));
+        const raw = JSON.parse((0, import_node_fs5.readFileSync)(projectConfigPath, "utf-8"));
         const config2 = validateConfig(raw);
         if (config2) {
           configCache.set(cacheKey, config2);
@@ -17464,9 +17506,9 @@ function loadEmbeddingConfig(projectRoot) {
     }
   }
   const userConfigPath = resolveUserConfigPath();
-  if ((0, import_node_fs4.existsSync)(userConfigPath)) {
+  if ((0, import_node_fs5.existsSync)(userConfigPath)) {
     try {
-      const raw = JSON.parse((0, import_node_fs4.readFileSync)(userConfigPath, "utf-8"));
+      const raw = JSON.parse((0, import_node_fs5.readFileSync)(userConfigPath, "utf-8"));
       const config2 = validateConfig(raw);
       if (config2) {
         configCache.set(cacheKey, config2);
@@ -17603,13 +17645,13 @@ var IndexStore = class _IndexStore {
     return (0, import_node_path7.join)(projectRoot, INDEX_DIR_NAME);
   }
   static indexExists(projectRoot) {
-    return (0, import_node_fs5.existsSync)((0, import_node_path7.join)(projectRoot, INDEX_DIR_NAME, "lancedb"));
+    return (0, import_node_fs6.existsSync)((0, import_node_path7.join)(projectRoot, INDEX_DIR_NAME, "lancedb"));
   }
   static async open(projectRoot) {
     getEmbeddingFunction(projectRoot);
     const indexDir = (0, import_node_path7.join)(projectRoot, INDEX_DIR_NAME);
     const dbDir = (0, import_node_path7.join)(indexDir, "lancedb");
-    if (!(0, import_node_fs5.existsSync)(indexDir)) (0, import_node_fs5.mkdirSync)(indexDir, { recursive: true });
+    if (!(0, import_node_fs6.existsSync)(indexDir)) (0, import_node_fs6.mkdirSync)(indexDir, { recursive: true });
     const db = await connect(dbDir);
     const tableNames = await db.tableNames();
     let table;
@@ -17666,7 +17708,7 @@ var IndexStore = class _IndexStore {
   }
   static async destroy(projectRoot) {
     const indexDir = (0, import_node_path7.join)(projectRoot, INDEX_DIR_NAME);
-    (0, import_node_fs5.rmSync)(indexDir, { recursive: true, force: true });
+    (0, import_node_fs6.rmSync)(indexDir, { recursive: true, force: true });
   }
   static async createFtsIndices(table) {
     for (const col of FTS_COLUMNS) {
@@ -17730,7 +17772,7 @@ var IndexStore = class _IndexStore {
     const escaped = escapeSqlString(filePath);
     await this.#table.delete(`file_path = '${escaped}'`);
   }
-  async search(query, filePattern, limit) {
+  async search(query, filePattern, limit, pathPrefix) {
     const overfetch = Math.min(limit * 3, 100);
     let q;
     if (this.#hasEmbedding) {
@@ -17738,9 +17780,17 @@ var IndexStore = class _IndexStore {
     } else {
       q = this.#table.search(query, "fts").limit(overfetch);
     }
+    const conditions = [];
     if (filePattern) {
       const likePattern = filePattern.replace(/\*/g, "%");
-      q = q.where(`file_path LIKE '%${escapeSqlString(likePattern)}%'`);
+      conditions.push(`file_path LIKE '%${escapeSqlString(likePattern)}%'`);
+    }
+    if (pathPrefix) {
+      const normalized = pathPrefix.replace(/^\.\//, "").replace(/\/$/, "");
+      conditions.push(`file_path LIKE '${escapeSqlString(normalized)}%'`);
+    }
+    if (conditions.length > 0) {
+      q = q.where(conditions.join(" AND "));
     }
     if (this.#hasEmbedding && this.#rrf) {
       q = q.rerank(this.#rrf);
@@ -17782,7 +17832,7 @@ var IndexStore = class _IndexStore {
 };
 
 // src/indexer.ts
-var import_node_fs7 = require("node:fs");
+var import_node_fs8 = require("node:fs");
 var import_node_child_process2 = require("node:child_process");
 
 // src/chunker.ts
@@ -17957,7 +18007,7 @@ function chunkByChars(content, language) {
 }
 
 // src/progress.ts
-var import_node_fs6 = require("node:fs");
+var import_node_fs7 = require("node:fs");
 var import_node_path8 = require("node:path");
 var PROGRESS_FILE = "progress.json";
 var CACHE_DIR_NAME = ".smart-explore-mcp-cache";
@@ -17966,9 +18016,9 @@ function progressPath(projectRoot) {
 }
 function readProgress(projectRoot) {
   const p = progressPath(projectRoot);
-  if (!(0, import_node_fs6.existsSync)(p)) return null;
+  if (!(0, import_node_fs7.existsSync)(p)) return null;
   try {
-    return JSON.parse((0, import_node_fs6.readFileSync)(p, "utf-8"));
+    return JSON.parse((0, import_node_fs7.readFileSync)(p, "utf-8"));
   } catch {
     return null;
   }
@@ -17977,8 +18027,8 @@ function writeProgress(projectRoot, state) {
   const p = progressPath(projectRoot);
   try {
     const dir = (0, import_node_path8.join)(projectRoot, CACHE_DIR_NAME);
-    if (!(0, import_node_fs6.existsSync)(dir)) (0, import_node_fs6.mkdirSync)(dir, { recursive: true });
-    (0, import_node_fs6.writeFileSync)(p, JSON.stringify(state, null, 2));
+    if (!(0, import_node_fs7.existsSync)(dir)) (0, import_node_fs7.mkdirSync)(dir, { recursive: true });
+    (0, import_node_fs7.writeFileSync)(p, JSON.stringify(state, null, 2));
   } catch {
   }
 }
@@ -18039,7 +18089,7 @@ async function indexProject(projectRoot, options) {
         changedFiles.push(file);
         continue;
       }
-      const actualMtime = (0, import_node_fs7.statSync)(file.absolutePath).mtimeMs / 1e3;
+      const actualMtime = (0, import_node_fs8.statSync)(file.absolutePath).mtimeMs / 1e3;
       if (actualMtime > storedMtime) {
         changedFiles.push(file);
       }
@@ -18097,7 +18147,7 @@ async function indexProject(projectRoot, options) {
       const file = filesByPath.get(relPath);
       if (!file) continue;
       const chunks = chunkFromParsed(file.content, parsedFile);
-      const mtime = (0, import_node_fs7.statSync)(file.absolutePath).mtimeMs / 1e3;
+      const mtime = (0, import_node_fs8.statSync)(file.absolutePath).mtimeMs / 1e3;
       chunkFiles.push({ filePath: relPath, mtime, chunks });
     }
     chunksTotal = chunkFiles.reduce((sum, file) => sum + file.chunks.length, 0);
@@ -18174,25 +18224,25 @@ function formatIndexProgress(percent, filesProcessed, filesTotal, chunksIndexed,
 var tools = [
   {
     name: "smart_search",
-    description: "Search codebase for symbols, functions, classes, and code chunks using hybrid vector + BM25 search (or BM25-only if no embedding model configured). Returns matching chunks with file paths and anchors, grouped by file. Use path parameter to scope the search. If the index does not exist, indexing starts automatically and this call blocks until it completes (up to 90s).",
+    description: 'Semantic + BM25 code search. Use for concepts, behavior, "where is X handled?", unknown symbol names \u2014 not exact strings (use Grep). Auto-builds index on first call (blocks up to 90s). Returns ranked chunks grouped by file.',
     inputSchema: {
       type: "object",
       properties: {
         query: {
           type: "string",
-          description: "Search query \u2014 natural language or code terms. Matched against function bodies, class outlines, markdown sections, and file content."
+          description: "Natural language or code terms."
         },
         path: {
           type: "string",
-          description: "Root directory to search (default: current working directory)"
+          description: "Root dir (default: cwd)"
         },
         max_results: {
           type: "number",
-          description: "Maximum results to return (default: 20)"
+          description: "Max results (default: 20)"
         },
         file_pattern: {
           type: "string",
-          description: 'OPTIONAL \u2014 omit by default. The index already covers all code files. Use ONLY to narrow results to a specific file extension or directory. Pass a simple substring: ".py", "src/services", "test". Supports * as wildcard (e.g. "*.py" matches .py files). Do NOT use brace expansion like "{ts,tsx}" or glob paths like "**/*.py" \u2014 these are not supported and will return 0 matches.'
+          description: "Substring or *.wildcard to narrow by ext/dir. No {brace} or **/glob."
         }
       },
       required: ["query"]
@@ -18244,7 +18294,7 @@ Try smart_index to rebuild.` }], isError: true };
       }
       try {
         const rows = await store.search(args.query, filePattern, maxResults);
-        const formatted = formatSearchResults(args.query, rows, store.hasEmbedding);
+        const formatted = formatSearchResults(args.query, rows, store.hasEmbedding, loadSearchPreviewMode());
         return { content: [{ type: "text", text: formatted }] };
       } finally {
         await store.close();
@@ -18253,17 +18303,17 @@ Try smart_index to rebuild.` }], isError: true };
   },
   {
     name: "smart_unfold",
-    description: "Expand a specific symbol (function, class, method) from a file. Returns the full source code of just that symbol. Use after smart_search or smart_outline to read specific code.",
+    description: "Return full source of one named symbol (function/class/method). Use after smart_search or smart_outline instead of Read for code.",
     inputSchema: {
       type: "object",
       properties: {
         file_path: {
           type: "string",
-          description: "Path to the source file"
+          description: "Source file path"
         },
         symbol_name: {
           type: "string",
-          description: "Name of the symbol to unfold (function, class, method, etc.)"
+          description: "Symbol name (function/class/method)"
         }
       },
       required: ["file_path", "symbol_name"]
@@ -18301,13 +18351,13 @@ ${available}`
   },
   {
     name: "smart_outline",
-    description: "Get structural outline of a file or directory \u2014 shows all symbols (functions, classes, methods, types) with signatures but bodies folded. Much cheaper than reading the full source.",
+    description: "Structural outline of a file or directory: all symbols with signatures, bodies folded. Cheaper than Read for code.",
     inputSchema: {
       type: "object",
       properties: {
         file_path: {
           type: "string",
-          description: "Path to the file or directory"
+          description: "File or directory path"
         }
       },
       required: ["file_path"]
@@ -18366,25 +18416,25 @@ ${available}`
   },
   {
     name: "smart_callers",
-    description: "Find incoming call edges for a symbol. Returns functions/methods that call the requested symbol, with call-site lines and resolved targets when available.",
+    description: 'Find who calls a symbol. Returns callers with call-site lines. Use for "who calls X?" instead of grepping.',
     inputSchema: {
       type: "object",
       properties: {
         symbol_name: {
           type: "string",
-          description: "Function or method name to find callers for, e.g. parseFile"
+          description: "Symbol name"
         },
         path: {
           type: "string",
-          description: "Root directory to scan (default: current working directory)"
+          description: "Root dir (default: cwd)"
         },
         max_results: {
           type: "number",
-          description: "Maximum call edges to return (default: 40)"
+          description: "Max edges (default: 40)"
         },
         file_pattern: {
           type: "string",
-          description: 'OPTIONAL \u2014 omit by default. Use ONLY to narrow to a specific file extension or directory. Pass a simple substring: ".py", "src/services". Supports * as wildcard (e.g. "*.py"). Do NOT use brace expansion like "{ts,tsx}" \u2014 not supported.'
+          description: "Substring or *.wildcard to narrow by ext/dir. No {brace} or **/glob."
         }
       },
       required: ["symbol_name"]
@@ -18400,25 +18450,25 @@ ${available}`
   },
   {
     name: "smart_callees",
-    description: "Find outgoing call edges for a symbol. Returns functions/methods called by the requested symbol, with call-site lines and resolved targets when available.",
+    description: 'Find what a symbol calls. Returns callees with call-site lines. Use for "what does X call?" instead of grepping.',
     inputSchema: {
       type: "object",
       properties: {
         symbol_name: {
           type: "string",
-          description: "Function or method name to inspect, e.g. searchCodebase"
+          description: "Symbol name"
         },
         path: {
           type: "string",
-          description: "Root directory to scan (default: current working directory)"
+          description: "Root dir (default: cwd)"
         },
         max_results: {
           type: "number",
-          description: "Maximum call edges to return (default: 40)"
+          description: "Max edges (default: 40)"
         },
         file_pattern: {
           type: "string",
-          description: 'OPTIONAL \u2014 omit by default. Use ONLY to narrow to a specific file extension or directory. Pass a simple substring: ".py", "src/services". Supports * as wildcard (e.g. "*.py"). Do NOT use brace expansion like "{ts,tsx}" \u2014 not supported.'
+          description: "Substring or *.wildcard to narrow by ext/dir. No {brace} or **/glob."
         }
       },
       required: ["symbol_name"]
@@ -18434,21 +18484,21 @@ ${available}`
   },
   {
     name: "smart_related_files",
-    description: "Show dependency/file graph around one file: outgoing relative imports, incoming imports, and likely test files.",
+    description: "Import graph around one file: outgoing imports, incoming importers, likely test files.",
     inputSchema: {
       type: "object",
       properties: {
         file_path: {
           type: "string",
-          description: "File to inspect, relative to path or absolute"
+          description: "File path (relative to path or absolute)"
         },
         path: {
           type: "string",
-          description: "Project root directory (default: current working directory)"
+          description: "Root dir (default: cwd)"
         },
         max_results: {
           type: "number",
-          description: "Maximum files per section (default: 40)"
+          description: "Max files per section (default: 40)"
         }
       },
       required: ["file_path"]
@@ -18461,17 +18511,17 @@ ${available}`
   },
   {
     name: "smart_index",
-    description: "Force rebuild the search index for a project. Parses all code files, chunks them into functions/classes/sections, computes embeddings (if configured), and stores them in a LanceDB index. Use this when the index is missing, corrupted, or you want to pick up embedding model changes.",
+    description: "Force rebuild search index. Use when index is missing, corrupted, or after embedding model changes.",
     inputSchema: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "Root directory of the project to index (default: current working directory)"
+          description: "Root dir (default: cwd)"
         },
         force: {
           type: "boolean",
-          description: "If true, reindex all files even if unchanged (default: false)"
+          description: "Reindex unchanged files too (default: false)"
         }
       }
     },
@@ -18493,13 +18543,13 @@ ${available}`
   },
   {
     name: "smart_index_status",
-    description: "Check the indexing progress for a project. Returns status (idle/indexing/done/error), percentage complete, file counts, and chunk counts. Use this to poll when smart_search reports indexing is in progress.",
+    description: "Poll index build progress. Use when smart_search reports indexing in progress.",
     inputSchema: {
       type: "object",
       properties: {
         path: {
           type: "string",
-          description: "Root directory of the project (default: current working directory)"
+          description: "Root dir (default: cwd)"
         }
       }
     },
