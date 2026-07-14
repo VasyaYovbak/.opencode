@@ -10,78 +10,13 @@
     "edit": "ask",
     "apply_patch": "ask"
   },
-  "instructions": [
-    "rules.md"
-  ],
-  "provider": {
-    "openai": {
-      "models": {
-        "gpt-5.5-flex": {
-          "id": "gpt-5.5",
-          "name": "gpt-5.5 FLEX",
-          "cost": {
-            "input": 2.5,
-            "cache_read": 0.25,
-            "output": 15,
-            "context_over_200k": {
-              "input": 5,
-              "cache_read": 0.5,
-              "output": 22.5
-            }
-          },
-          "options": {
-            "serviceTier": "flex"
-          }
-        },
-        "gpt-5.4-flex": {
-          "id": "gpt-5.4",
-          "name": "gpt-5.4 FLEX",
-          "cost": {
-            "input": 1.25,
-            "cache_read": 0.125,
-            "output": 7.5,
-            "context_over_200k": {
-              "input": 2.5,
-              "cache_read": 0.25,
-              "output": 11.25
-            }
-          },
-          "options": {
-            "serviceTier": "flex"
-          }
-        },
-        "gpt-5.4-mini-flex": {
-          "id": "gpt-5.4-mini",
-          "name": "gpt-5.4 mini FLEX",
-          "cost": {
-            "input": 0.375,
-            "cache_read": 0.0375,
-            "output": 2.25
-          },
-          "options": {
-            "serviceTier": "flex"
-          }
-        },
-        "gpt-5.4-nano-flex": {
-          "id": "gpt-5.4-nano",
-          "name": "gpt-5.4 nano FLEX",
-          "cost": {
-            "input": 0.1,
-            "cache_read": 0.01,
-            "output": 0.625
-          },
-          "options": {
-            "serviceTier": "flex"
-          }
-        }
-      }
-    }
-  },
-  "lsp": true,
   "plugin": [
-    // "./plugins_dir/batch_tool_reminder/batch_tool_reminder.ts",
     "./plugins_dir/oh_my_opencode_tool_only/dist/index.js",
-    // "./plugins_dir/post_edit_checks/post_edit_checks.ts",
-    "./plugins_dir/smart_explore_opencode/smart_explore_opencode.ts"
+    "./plugins_dir/smart_explore_opencode/smart_explore_opencode.ts",
+    "./plugins_dir/openai-flex-models.ts"
   ]
 }
+
+    // "./plugins_dir/post_edit_checks/post_edit_checks.ts",
+    // "./plugins_dir/batch_tool_reminder/batch_tool_reminder.ts",
+    // "/home/vasyl/re  pos/tcdsm/.opencode/plugins/token-optimizer.ts"
