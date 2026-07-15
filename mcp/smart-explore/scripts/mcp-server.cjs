@@ -16885,6 +16885,7 @@ function formatSearchResults(query, rows, hasEmbedding, previewMode = "lines") {
 
 // src/outline-cache.ts
 var import_promises2 = require("node:fs/promises");
+var import_node_crypto = require("node:crypto");
 var import_node_path4 = require("node:path");
 var outlineCache = /* @__PURE__ */ new Map();
 var loadedCacheRoots = /* @__PURE__ */ new Set();
@@ -17036,13 +17037,14 @@ async function findCacheRoot(startPath) {
   } catch {
     current = (0, import_node_path4.dirname)(current);
   }
+  const fallbackRoot = current;
   while (true) {
     try {
       await (0, import_promises2.stat)((0, import_node_path4.join)(current, ".git"));
       return current;
     } catch {
       const parent = (0, import_node_path4.dirname)(current);
-      if (parent === current) return startPath;
+      if (parent === current) return fallbackRoot;
       current = parent;
     }
   }
@@ -17080,7 +17082,7 @@ async function saveDiskCache(cacheRoot) {
   const dir = (0, import_node_path4.join)(cacheRoot, CACHE_DIR);
   await (0, import_promises2.mkdir)(dir, { recursive: true });
   const target = (0, import_node_path4.join)(dir, CACHE_FILE);
-  const temp = `${target}.tmp`;
+  const temp = `${target}.${(0, import_node_crypto.randomUUID)()}.tmp`;
   await (0, import_promises2.writeFile)(temp, JSON.stringify({ version: 1, entries }));
   await (0, import_promises2.rename)(temp, target);
 }
@@ -17452,7 +17454,7 @@ function formatFileList(files, maxResults) {
 var import_lancedb = __toESM(require("@lancedb/lancedb"), 1);
 var import_node_path7 = require("node:path");
 var import_node_fs6 = require("node:fs");
-var import_node_crypto = require("node:crypto");
+var import_node_crypto2 = require("node:crypto");
 
 // src/embed.ts
 var import_embedding = require("@lancedb/lancedb/embedding");
@@ -17624,7 +17626,7 @@ function escapeSqlString(s) {
   return s.replace(/'/g, "''");
 }
 function hashContent(content) {
-  return (0, import_node_crypto.createHash)("sha256").update(content).digest("hex").slice(0, 16);
+  return (0, import_node_crypto2.createHash)("sha256").update(content).digest("hex").slice(0, 16);
 }
 var IndexStore = class _IndexStore {
   #projectRoot;
@@ -18303,7 +18305,7 @@ Try smart_index to rebuild.` }], isError: true };
   },
   {
     name: "smart_unfold",
-    description: "Return full source of one named symbol (function/class/method). Use after smart_search or smart_outline instead of Read for code.",
+    description: "Return full source of one or more named symbols (function/class/method). Batch independent reads in requests instead of calling this tool repeatedly.",
     inputSchema: {
       type: "object",
       properties: {
@@ -18314,39 +18316,43 @@ Try smart_index to rebuild.` }], isError: true };
         symbol_name: {
           type: "string",
           description: "Symbol name (function/class/method)"
+        },
+        requests: {
+          type: "array",
+          minItems: 1,
+          description: "File/symbol pairs to unfold in one call",
+          items: {
+            type: "object",
+            properties: {
+              file_path: { type: "string", description: "Source file path" },
+              symbol_name: { type: "string", description: "Symbol name (function/class/method)" }
+            },
+            required: ["file_path", "symbol_name"]
+          }
         }
       },
-      required: ["file_path", "symbol_name"]
+      anyOf: [
+        { required: ["file_path", "symbol_name"] },
+        { required: ["requests"] }
+      ]
     },
     handler: async (args) => {
-      const filePath = (0, import_node_path9.resolve)(args.file_path);
-      const fileOutline = await getFileOutline(filePath);
-      const unfolded = unfoldSymbolFromFolded(fileOutline.content, filePath, fileOutline.foldedFile, args.symbol_name);
-      if (unfolded) {
-        return { content: [{ type: "text", text: unfolded }] };
-      }
-      if (fileOutline.foldedFile.symbols.length > 0) {
-        const available = fileOutline.foldedFile.symbols.map((s) => `  - ${s.name} (${s.kind})`).join("\n");
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Symbol "${args.symbol_name}" not found in ${args.file_path}.
+      const requests = args.requests ?? [{ file_path: args.file_path, symbol_name: args.symbol_name }];
+      const results = await Promise.all(requests.map(async (request) => {
+        const filePath = (0, import_node_path9.resolve)(request.file_path);
+        const fileOutline = await getFileOutline(filePath);
+        const unfolded = unfoldSymbolFromFolded(fileOutline.content, filePath, fileOutline.foldedFile, request.symbol_name);
+        if (unfolded) return unfolded;
+        if (fileOutline.foldedFile.symbols.length > 0) {
+          const available = fileOutline.foldedFile.symbols.map((s) => `  - ${s.name} (${s.kind})`).join("\n");
+          return `Symbol "${request.symbol_name}" not found in ${request.file_path}.
 
 Available symbols:
-${available}`
-            }
-          ]
-        };
-      }
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Could not parse ${args.file_path}. File may be unsupported or empty.`
-          }
-        ]
-      };
+${available}`;
+        }
+        return `Could not parse ${request.file_path}. File may be unsupported or empty.`;
+      }));
+      return { content: [{ type: "text", text: results.join("\n\n") }] };
     }
   },
   {

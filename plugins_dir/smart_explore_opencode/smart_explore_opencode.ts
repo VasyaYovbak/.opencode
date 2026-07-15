@@ -6,11 +6,11 @@ import { fileURLToPath } from "node:url"
 
 const GREP_HINT_MCP = " For searching code by meaning (functions, concepts, 'where is X handled'), use the smart_explore_smart_search tool instead — it does hybrid vector + BM25 search and returns ranked symbols. Use Grep only for exact string/regex matches (TODO, constants, error messages)."
 const GLOB_HINT_MCP = " For finding code inside files, use smart_explore_smart_search instead. Use Glob only for file path patterns (*.test.ts, file names)."
-const READ_HINT_MCP = " CRITICAL: Do NOT use Read with offset/limit to read specific functions or classes in code files. Instead, use smart_explore_smart_unfold with file_path and symbol_name — it returns the exact function body via AST parsing. Read is ONLY for: JSON, markdown, config files, and files under 50 lines. For any .ts/.py/.js/.go/.rs file over 50 lines, you MUST use smart_explore_smart_unfold instead of Read."
+const READ_HINT_MCP = " CRITICAL: Do NOT use Read with offset/limit to read specific functions or classes in code files. Instead, use smart_explore_smart_unfold — it returns exact function bodies via AST parsing. Batch independent reads in one call with requests: [{file_path, symbol_name}, ...], rather than calling it repeatedly. Read is ONLY for: JSON, markdown, config files, and files under 50 lines. For any .ts/.py/.js/.go/.rs file over 50 lines, you MUST use smart_explore_smart_unfold instead of Read."
 
 const GREP_HINT_CLI = " For searching code by meaning (functions, concepts, 'where is X handled'), run `smart-explore search \"<query>\"` in bash — it does hybrid vector + BM25 search. Use Grep only for exact string/regex matches (TODO, constants, error messages)."
 const GLOB_HINT_CLI = " For finding code inside files, run `smart-explore search \"<query>\"` in bash. Use Glob only for file path patterns (*.test.ts, file names)."
-const READ_HINT_CLI = " CRITICAL: Do NOT use Read with offset/limit to read specific functions or classes in code files. Instead, run `smart-explore unfold <file> <symbol>` in bash. Read is ONLY for: JSON, markdown, config files, and files under 50 lines."
+const READ_HINT_CLI = " CRITICAL: Do NOT use Read with offset/limit to read specific functions or classes in code files. Instead, run `smart-explore unfold <file> <symbol> [<file> <symbol> ...]` in bash, batching all independent file/symbol pairs in one command. Read is ONLY for: JSON, markdown, config files, and files under 50 lines."
 
 const SMART_EXPLORE_MCP_NAME = "smart-explore"
 const CONFIG_FILE_NAME = "smart-explore-config.json"
@@ -241,7 +241,7 @@ const SmartExploreOpenCodePlugin: Plugin = async ({ client, directory, worktree 
         const mentioned = argsStr.includes("smart-explore") || argsStr.includes("smart_explore") ||
           outStr.includes("smart-explore") || outStr.includes("smart_explore")
         if (mentioned) {
-          output.output = "'smart-explore' is not a tool — it is a CLI command. Run it via bash:\n  smart-explore search \"<query>\"\n  smart-explore outline <file>\n  smart-explore unfold <file> <symbol>\n  smart-explore callers <symbol>\n  smart-explore callees <symbol>\n  smart-explore related <file>\nSee smart-explore-cli-rules for full reference."
+          output.output = "'smart-explore' is not a tool — it is a CLI command. Run it via bash:\n  smart-explore search \"<query>\"\n  smart-explore outline <file>\n  smart-explore unfold <file> <symbol> [<file> <symbol> ...]\n  smart-explore callers <symbol>\n  smart-explore callees <symbol>\n  smart-explore related <file>\nSee smart-explore-cli-rules for full reference."
           return
         }
       }

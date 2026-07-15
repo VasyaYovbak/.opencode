@@ -1,4 +1,5 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { dirname, join, relative, resolve } from "node:path";
 import { walkDir, normalizeRelativePath } from "./search.js";
 import { parseFilesBatch, formatFoldedView, loadUserGrammars, type FoldedFile } from "./parser.js";
@@ -231,6 +232,7 @@ async function findCacheRoot(startPath: string): Promise<string> {
   } catch {
     current = dirname(current);
   }
+  const fallbackRoot = current;
 
   while (true) {
     try {
@@ -238,7 +240,7 @@ async function findCacheRoot(startPath: string): Promise<string> {
       return current;
     } catch {
       const parent = dirname(current);
-      if (parent === current) return startPath;
+      if (parent === current) return fallbackRoot;
       current = parent;
     }
   }
@@ -282,7 +284,7 @@ async function saveDiskCache(cacheRoot: string): Promise<void> {
   const dir = join(cacheRoot, CACHE_DIR);
   await mkdir(dir, { recursive: true });
   const target = join(dir, CACHE_FILE);
-  const temp = `${target}.tmp`;
+  const temp = `${target}.${randomUUID()}.tmp`;
   await writeFile(temp, JSON.stringify({ version: 1, entries } satisfies DiskCache));
   await rename(temp, target);
 }

@@ -1553,6 +1553,7 @@ function formatSearchResults(query, rows, hasEmbedding, previewMode = "lines") {
 
 // src/outline-cache.ts
 var import_promises2 = require("node:fs/promises");
+var import_node_crypto = require("node:crypto");
 var import_node_path4 = require("node:path");
 var outlineCache = /* @__PURE__ */ new Map();
 var loadedCacheRoots = /* @__PURE__ */ new Set();
@@ -1695,13 +1696,14 @@ async function findCacheRoot(startPath) {
   } catch {
     current = (0, import_node_path4.dirname)(current);
   }
+  const fallbackRoot = current;
   while (true) {
     try {
       await (0, import_promises2.stat)((0, import_node_path4.join)(current, ".git"));
       return current;
     } catch {
       const parent = (0, import_node_path4.dirname)(current);
-      if (parent === current) return startPath;
+      if (parent === current) return fallbackRoot;
       current = parent;
     }
   }
@@ -1739,7 +1741,7 @@ async function saveDiskCache(cacheRoot) {
   const dir = (0, import_node_path4.join)(cacheRoot, CACHE_DIR);
   await (0, import_promises2.mkdir)(dir, { recursive: true });
   const target = (0, import_node_path4.join)(dir, CACHE_FILE);
-  const temp = `${target}.tmp`;
+  const temp = `${target}.${(0, import_node_crypto.randomUUID)()}.tmp`;
   await (0, import_promises2.writeFile)(temp, JSON.stringify({ version: 1, entries }));
   await (0, import_promises2.rename)(temp, target);
 }
@@ -2111,7 +2113,7 @@ function formatFileList(files, maxResults) {
 var import_lancedb = __toESM(require("@lancedb/lancedb"), 1);
 var import_node_path7 = require("node:path");
 var import_node_fs6 = require("node:fs");
-var import_node_crypto = require("node:crypto");
+var import_node_crypto2 = require("node:crypto");
 
 // src/embed.ts
 var import_embedding = require("@lancedb/lancedb/embedding");
@@ -2283,7 +2285,7 @@ function escapeSqlString(s) {
   return s.replace(/'/g, "''");
 }
 function hashContent(content) {
-  return (0, import_node_crypto.createHash)("sha256").update(content).digest("hex").slice(0, 16);
+  return (0, import_node_crypto2.createHash)("sha256").update(content).digest("hex").slice(0, 16);
 }
 var IndexStore = class _IndexStore {
   #projectRoot;
@@ -2972,24 +2974,26 @@ Try: smart-explore index --force`);
   }
 }
 async function cmdUnfold(positional) {
-  if (positional.length < 2) emitError("Usage: smart-explore unfold <file> <symbol>");
-  const filePath = (0, import_node_path9.resolve)(positional[0]);
-  const symbolName = positional[1];
-  const fileOutline = await getFileOutline(filePath);
-  const unfolded = unfoldSymbolFromFolded(fileOutline.content, filePath, fileOutline.foldedFile, symbolName);
-  if (unfolded) {
-    emit(unfolded);
-    return;
+  if (positional.length < 2 || positional.length % 2 !== 0) {
+    emitError("Usage: smart-explore unfold <file> <symbol> [<file> <symbol> ...]");
   }
-  if (fileOutline.foldedFile.symbols.length > 0) {
-    const available = fileOutline.foldedFile.symbols.map((s) => s.children && s.children.length > 0 ? `  - ${s.name} (${s.kind}, ${s.children.length} methods \u2014 use \`smart-explore outline ${positional[0]}\` to list them)` : `  - ${s.name} (${s.kind})`).join("\n");
-    emit(`Symbol "${symbolName}" not found in ${positional[0]}.
+  const results = await Promise.all(Array.from({ length: positional.length / 2 }, async (_, index) => {
+    const inputPath = positional[index * 2];
+    const symbolName = positional[index * 2 + 1];
+    const filePath = (0, import_node_path9.resolve)(inputPath);
+    const fileOutline = await getFileOutline(filePath);
+    const unfolded = unfoldSymbolFromFolded(fileOutline.content, filePath, fileOutline.foldedFile, symbolName);
+    if (unfolded) return unfolded;
+    if (fileOutline.foldedFile.symbols.length > 0) {
+      const available = fileOutline.foldedFile.symbols.map((s) => s.children && s.children.length > 0 ? `  - ${s.name} (${s.kind}, ${s.children.length} methods \u2014 use \`smart-explore outline ${inputPath}\` to list them)` : `  - ${s.name} (${s.kind})`).join("\n");
+      return `Symbol "${symbolName}" not found in ${inputPath}.
 
 Available symbols:
-${available}`);
-    return;
-  }
-  emit(`Could not parse ${positional[0]}. File may be unsupported or empty.`);
+${available}`;
+    }
+    return `Could not parse ${inputPath}. File may be unsupported or empty.`;
+  }));
+  emit(results.join("\n\n"));
 }
 async function cmdOutline(positional) {
   if (positional.length < 1) emitError("Usage: smart-explore outline <file_or_dir>");
@@ -3099,8 +3103,8 @@ Commands:
           Pass multiple queries to merge + dedup results (e.g. "auth" "auth flow").
   outline <file_or_dir>
           Symbol signatures with bodies folded. Cheaper than reading full source.
-  unfold <file> <symbol>
-          Full source of one named symbol (function/class/method).
+  unfold <file> <symbol> [<file> <symbol> ...]
+          Full source of one or more named symbols. Pass file/symbol pairs to batch reads.
   callers <symbol> [--path SUBDIR] [--file-pattern PAT] [--max-results N]
           Who calls a symbol.
   callees <symbol> [--path SUBDIR] [--file-pattern PAT] [--max-results N]

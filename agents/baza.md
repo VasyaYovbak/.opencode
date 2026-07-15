@@ -2,10 +2,10 @@
 description: Baza
 mode: primary
 permission:
-  webfetch: deny
+  webfetch: allow
   question: deny
   skill: deny
-  websearch: deny
+  websearch: allow
   glob: deny
   task: deny
   grep: deny

@@ -8,7 +8,7 @@
 |---|---|
 | `search <q> [q2 ...] [--path SUBDIR] [--file-pattern PAT] [--max-results N]` | Concepts, behavior, "where is X handled?". Not exact strings (use Grep). Auto-builds index on first run (blocks ≤90s). **Multiple queries merged + deduped** — pass all phrasings in one call. |
 | `outline <file_or_dir>` | Symbol signatures with bodies folded. Cheaper than Read. |
-| `unfold <file> <symbol>` | Full source of one function/class/method. **Unfold specific methods first** (`unfold file.py ClassName.method_name`), not the whole class — unfolding a class dumps its entire body (check `(N lines)` span in search/outline output). Only unfold a whole class when you truly need all its methods. Qualify ambiguous symbols (`ViewLineageProcessor.__init__`, not `__init__`). |
+| `unfold <file> <symbol> [<file> <symbol> ...]` | Full source of one or more functions/classes/methods. **Batch independent symbols as file/symbol pairs in one command** instead of calling unfold repeatedly. Unfold specific methods first (`unfold file.py ClassName.method_name`), not the whole class — unfolding a class dumps its entire body (check `(N lines)` span in search/outline output). Only unfold a whole class when you truly need all its methods. Qualify ambiguous symbols (`ViewLineageProcessor.__init__`, not `__init__`). |
 | `callers <symbol> [--path SUBDIR] [--file-pattern PAT]` | Who calls X. |
 | `callees <symbol> [--path SUBDIR] [--file-pattern PAT]` | What X calls. |
 | `related <file> [--path SUBDIR]` | Import graph around a file. |
@@ -31,7 +31,7 @@ Substring or `*.wildcard` to narrow by extension/dir. No `{brace}` expansion, no
 
 - File names → `find`/`ls`. Exact text/regex → `rg`. JSON/config/markdown → `Read`.
 - Concepts/behavior/unknown symbols → `search`. Call relationships → `callers`/`callees`. File structure → `outline`. One symbol body → `unfold`.
-- Code reading: `outline` → `unfold` specific methods, not whole classes. Check `(N lines)` spans — anything >200 lines is expensive to unfold.
+- Code reading: `outline` → batch all needed specific methods in one `unfold` command, not separate calls or whole classes. Check `(N lines)` spans — anything >200 lines is expensive to unfold.
 - If `search` returns nothing: rephrase with domain terms, narrow with `--file-pattern`, rebuild `index` if stale, fall back to `rg`.
 - **Batch search queries**: when you have multiple phrasings (e.g. "authorization", "auth flow", "how does auth work"), pass them all in one call: `smart-explore search "authorization" "auth flow" "how does auth work"`. Results are merged, deduplicated by chunk, and sorted by how many queries matched. Each result shows `[n/N]` match count. Saves tokens vs multiple separate calls.
 
@@ -50,7 +50,7 @@ smart-explore callers parseFile | wc -l        # count callers
 ```
 smart-explore search "authentication flow" "login process" "how does auth work"
 smart-explore outline src/auth.ts
-smart-explore unfold src/auth.ts loginHandler
+smart-explore unfold src/auth.ts loginHandler src/session.ts SessionStore.get
 smart-explore callers parseFile
 smart-explore related src/services/payment.ts
 ```

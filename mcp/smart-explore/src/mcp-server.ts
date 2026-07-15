@@ -143,7 +143,7 @@ Try smart_index to rebuild.` }], isError: true };
   {
     name: 'smart_unfold',
     description:
-      'Return full source of one named symbol (function/class/method). Use after smart_search or smart_outline instead of Read for code.',
+      'Return full source of one or more named symbols (function/class/method). Batch independent reads in requests instead of calling this tool repeatedly.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -155,37 +155,41 @@ Try smart_index to rebuild.` }], isError: true };
           type: 'string',
           description: 'Symbol name (function/class/method)',
         },
+        requests: {
+          type: 'array',
+          minItems: 1,
+          description: 'File/symbol pairs to unfold in one call',
+          items: {
+            type: 'object',
+            properties: {
+              file_path: { type: 'string', description: 'Source file path' },
+              symbol_name: { type: 'string', description: 'Symbol name (function/class/method)' },
+            },
+            required: ['file_path', 'symbol_name'],
+          },
+        },
       },
-      required: ['file_path', 'symbol_name'],
+      anyOf: [
+        { required: ['file_path', 'symbol_name'] },
+        { required: ['requests'] },
+      ],
     },
     handler: async (args: any) => {
-      const filePath = resolve(args.file_path);
-      const fileOutline = await getFileOutline(filePath);
-      const unfolded = unfoldSymbolFromFolded(fileOutline.content, filePath, fileOutline.foldedFile, args.symbol_name);
-      if (unfolded) {
-        return { content: [{ type: 'text' as const, text: unfolded }] };
-      }
-      if (fileOutline.foldedFile.symbols.length > 0) {
-        const available = fileOutline.foldedFile.symbols
-          .map((s) => `  - ${s.name} (${s.kind})`)
-          .join('\n');
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Symbol "${args.symbol_name}" not found in ${args.file_path}.\n\nAvailable symbols:\n${available}`,
-            },
-          ],
-        };
-      }
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `Could not parse ${args.file_path}. File may be unsupported or empty.`,
-          },
-        ],
-      };
+      const requests = args.requests ?? [{ file_path: args.file_path, symbol_name: args.symbol_name }];
+      const results = await Promise.all(requests.map(async (request: any) => {
+        const filePath = resolve(request.file_path);
+        const fileOutline = await getFileOutline(filePath);
+        const unfolded = unfoldSymbolFromFolded(fileOutline.content, filePath, fileOutline.foldedFile, request.symbol_name);
+        if (unfolded) return unfolded;
+        if (fileOutline.foldedFile.symbols.length > 0) {
+          const available = fileOutline.foldedFile.symbols
+            .map((s) => `  - ${s.name} (${s.kind})`)
+            .join('\n');
+          return `Symbol "${request.symbol_name}" not found in ${request.file_path}.\n\nAvailable symbols:\n${available}`;
+        }
+        return `Could not parse ${request.file_path}. File may be unsupported or empty.`;
+      }));
+      return { content: [{ type: 'text' as const, text: results.join('\n\n') }] };
     },
   },
   {

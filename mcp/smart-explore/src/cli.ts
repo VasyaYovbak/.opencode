@@ -7,7 +7,7 @@
  * Commands:
  *   search <query> [query2 ...] [--path SUBDIR] [--file-pattern PAT] [--max-results N]
  *   outline <file_or_dir>
- *   unfold <file> <symbol>
+ *   unfold <file> <symbol> [<file> <symbol> ...]
  *   callers <symbol> [--path SUBDIR] [--file-pattern PAT] [--max-results N]
  *   callees <symbol> [--path SUBDIR] [--file-pattern PAT] [--max-results N]
  *   related <file> [--path SUBDIR] [--max-results N]
@@ -147,26 +147,29 @@ async function cmdSearch(positional: string[], flags: Record<string, string | bo
 }
 
 async function cmdUnfold(positional: string[]): Promise<void> {
-  if (positional.length < 2) emitError('Usage: smart-explore unfold <file> <symbol>');
-  const filePath = resolve(positional[0]);
-  const symbolName = positional[1];
+  if (positional.length < 2 || positional.length % 2 !== 0) {
+    emitError('Usage: smart-explore unfold <file> <symbol> [<file> <symbol> ...]');
+  }
 
-  const fileOutline = await getFileOutline(filePath);
-  const unfolded = unfoldSymbolFromFolded(fileOutline.content, filePath, fileOutline.foldedFile, symbolName);
-  if (unfolded) {
-    emit(unfolded);
-    return;
-  }
-  if (fileOutline.foldedFile.symbols.length > 0) {
-    const available = fileOutline.foldedFile.symbols
-      .map((s) => s.children && s.children.length > 0
-        ? `  - ${s.name} (${s.kind}, ${s.children.length} methods — use \`smart-explore outline ${positional[0]}\` to list them)`
-        : `  - ${s.name} (${s.kind})`)
-      .join('\n');
-    emit(`Symbol "${symbolName}" not found in ${positional[0]}.\n\nAvailable symbols:\n${available}`);
-    return;
-  }
-  emit(`Could not parse ${positional[0]}. File may be unsupported or empty.`);
+  const results = await Promise.all(Array.from({ length: positional.length / 2 }, async (_, index) => {
+    const inputPath = positional[index * 2];
+    const symbolName = positional[index * 2 + 1];
+    const filePath = resolve(inputPath);
+    const fileOutline = await getFileOutline(filePath);
+    const unfolded = unfoldSymbolFromFolded(fileOutline.content, filePath, fileOutline.foldedFile, symbolName);
+    if (unfolded) return unfolded;
+    if (fileOutline.foldedFile.symbols.length > 0) {
+      const available = fileOutline.foldedFile.symbols
+        .map((s) => s.children && s.children.length > 0
+          ? `  - ${s.name} (${s.kind}, ${s.children.length} methods — use \`smart-explore outline ${inputPath}\` to list them)`
+          : `  - ${s.name} (${s.kind})`)
+        .join('\n');
+      return `Symbol "${symbolName}" not found in ${inputPath}.\n\nAvailable symbols:\n${available}`;
+    }
+    return `Could not parse ${inputPath}. File may be unsupported or empty.`;
+  }));
+
+  emit(results.join('\n\n'));
 }
 
 async function cmdOutline(positional: string[]): Promise<void> {
@@ -289,8 +292,8 @@ Commands:
           Pass multiple queries to merge + dedup results (e.g. "auth" "auth flow").
   outline <file_or_dir>
           Symbol signatures with bodies folded. Cheaper than reading full source.
-  unfold <file> <symbol>
-          Full source of one named symbol (function/class/method).
+  unfold <file> <symbol> [<file> <symbol> ...]
+          Full source of one or more named symbols. Pass file/symbol pairs to batch reads.
   callers <symbol> [--path SUBDIR] [--file-pattern PAT] [--max-results N]
           Who calls a symbol.
   callees <symbol> [--path SUBDIR] [--file-pattern PAT] [--max-results N]
