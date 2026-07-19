@@ -42,6 +42,9 @@
   },
   "scripts": {
     "build": "node scripts/build.js",
+    "test:relations-parser": "node tests/relations-parser.mjs",
+    "test:search-fallback": "node tests/search-fallback.mjs",
+    "typecheck": "tsc --noEmit",
     "start": "node scripts/mcp-server.cjs",
     "smart-explore-mcp": "node scripts/mcp-server.cjs",
     "smart-explore": "node scripts/smart-explore.cjs"

@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { collectSearchableFiles } from "./search.js";
 import { parseFilesBatch } from "./parser.js";
@@ -50,15 +50,17 @@ export async function indexProject(
   let processed = 0;
   let indexedChunks = 0;
   let chunksTotal = 0;
+  let store: IndexStore | undefined;
 
   try {
-    const store = await IndexStore.open(projectRoot);
+    const activeStore = await IndexStore.open(projectRoot);
+    store = activeStore;
 
     const { files } = await collectSearchableFiles(projectRoot, { projectRoot });
 
     const indexedFiles = force
       ? new Map<string, number>()
-      : await store.getIndexedFiles();
+      : await activeStore.getIndexedFiles();
 
     const changedFiles: typeof files = [];
     for (const file of files) {
@@ -67,8 +69,7 @@ export async function indexProject(
         changedFiles.push(file);
         continue;
       }
-      const actualMtime = statSync(file.absolutePath).mtimeMs / 1000;
-      if (actualMtime > storedMtime) {
+      if (file.mtime !== storedMtime) {
         changedFiles.push(file);
       }
     }
@@ -82,10 +83,20 @@ export async function indexProject(
     }
 
     for (const path of deletedPaths) {
-      await store.deleteFile(path);
+      await activeStore.deleteFile(path);
     }
 
-    totalFiles = changedFiles.length;
+    const readableChangedFiles: Array<(typeof changedFiles)[number] & { content: string }> = [];
+    for (const file of changedFiles) {
+      try {
+        const content = await readFile(file.absolutePath, "utf-8");
+        readableChangedFiles.push({ ...file, content: content.slice(0, 1000).includes("\0") ? "" : content });
+      } catch {
+        // The next incremental run will reconcile files changed during this scan.
+      }
+    }
+
+    totalFiles = readableChangedFiles.length;
     processed = 0;
     indexedChunks = 0;
     chunksTotal = 0;
@@ -126,7 +137,6 @@ export async function indexProject(
 
     if (totalFiles === 0) {
       writeIndexProgress("done", true);
-      await store.close();
       return {
         filesProcessed: 0,
         filesTotal: 0,
@@ -136,8 +146,8 @@ export async function indexProject(
       };
     }
 
-    const parsed = parseFilesBatch(changedFiles, projectRoot);
-    const filesByPath = new Map(changedFiles.map((file) => [file.relativePath, file]));
+    const parsed = parseFilesBatch(readableChangedFiles, projectRoot);
+    const filesByPath = new Map(readableChangedFiles.map((file) => [file.relativePath, file]));
     const chunkFiles: Array<{ filePath: string; mtime: number; chunks: ReturnType<typeof chunkFromParsed> }> = [];
 
     for (const [relPath, parsedFile] of parsed) {
@@ -145,25 +155,24 @@ export async function indexProject(
       if (!file) continue;
 
       const chunks = chunkFromParsed(file.content, parsedFile);
-      const mtime = statSync(file.absolutePath).mtimeMs / 1000;
-      chunkFiles.push({ filePath: relPath, mtime, chunks });
+      chunkFiles.push({ filePath: relPath, mtime: file.mtime, chunks });
     }
 
     chunksTotal = chunkFiles.reduce((sum, file) => sum + file.chunks.length, 0);
     writeIndexProgress("indexing", true);
 
     try {
-      if (store.hasEmbedding && chunksTotal > 0) {
+      if (activeStore.hasEmbedding && chunksTotal > 0) {
         setEmbeddingProgressHandler((chunkCount) => {
           indexedChunks = Math.min(chunksTotal, indexedChunks + chunkCount);
           writeIndexProgress("indexing");
         });
       }
 
-      await store.upsertChunkFiles(chunkFiles, {
+      await activeStore.upsertChunkFiles(chunkFiles, {
         onBatch: (filesProcessed, chunksIndexed) => {
           processed += filesProcessed;
-          if (!store.hasEmbedding) {
+          if (!activeStore.hasEmbedding) {
             indexedChunks = Math.min(chunksTotal, indexedChunks + chunksIndexed);
           }
           writeIndexProgress("indexing", true);
@@ -172,8 +181,6 @@ export async function indexProject(
     } finally {
       setEmbeddingProgressHandler(null);
     }
-
-    await store.close();
 
     processed = totalFiles;
     indexedChunks = chunksTotal;
@@ -202,6 +209,8 @@ export async function indexProject(
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;
+  } finally {
+    await store?.close();
   }
 }
 

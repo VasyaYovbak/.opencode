@@ -2,6 +2,8 @@ import { TextEmbeddingFunction, getRegistry } from "@lancedb/lancedb/embedding";
 import { Float32 } from "apache-arrow";
 import { loadEmbeddingConfig, type EmbeddingConfig } from "./config.js";
 
+const EMBEDDING_TIMEOUT_MS = 30_000;
+
 const DEFAULT_QUERY_PROMPT = "Instruct: Given a coding question, retrieve relevant code or docs.\nQuery: ";
 const DEFAULT_MAX_BATCH_SIZE = 64;
 const DEFAULT_MAX_CONCURRENCY = 4;
@@ -55,15 +57,27 @@ export class F2LLMEmbeddingFunction extends TextEmbeddingFunction {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ model: this.#model, input: batch.texts }),
+          signal: AbortSignal.timeout(EMBEDDING_TIMEOUT_MS),
         });
         if (!resp.ok) {
           const body = await resp.text().catch(() => "");
           throw new Error(`Embedding HTTP ${resp.status}: ${body}`);
         }
         const data = (await resp.json()) as {
-          data: Array<{ embedding: number[]; index: number }>;
+          data?: Array<{ embedding?: number[]; index?: number }>;
         };
-        for (const d of data.data) allResults[batch.offset + d.index] = d.embedding;
+        if (!Array.isArray(data.data) || data.data.length !== batch.texts.length) {
+          throw new Error(`Embedding response contained ${data.data?.length ?? 0} vectors for ${batch.texts.length} inputs`);
+        }
+        const seenIndices = new Set<number>();
+        for (const d of data.data) {
+          if (!Number.isInteger(d.index) || d.index! < 0 || d.index! >= batch.texts.length || seenIndices.has(d.index!) ||
+              d.embedding?.length !== this.#dim || !d.embedding.every(Number.isFinite)) {
+            throw new Error(`Embedding response contained an invalid index or vector dimension (expected ${this.#dim})`);
+          }
+          seenIndices.add(d.index!);
+          allResults[batch.offset + d.index!] = d.embedding!;
+        }
         if (mode === "doc") embeddingProgressHandler?.(batch.texts.length);
       }
     });

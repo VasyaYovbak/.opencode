@@ -324,6 +324,7 @@ export function resolveGrammarPathWithFallback(language: string, projectRoot?: s
 const QUERIES: Record<string, string> = {
   jsts: `
 (function_declaration name: (identifier) @name) @func
+(generator_function_declaration name: (identifier) @name) @func
 (lexical_declaration (variable_declarator name: (identifier) @name value: [(arrow_function) (function_expression)])) @const_func
 (lexical_declaration (variable_declarator name: (identifier) @name value: [(array) (object) (new_expression) (ternary_expression)])) @const_var
 (class_declaration name: (type_identifier) @name) @cls
@@ -1260,4 +1261,3 @@ export function unfoldSymbolFromFolded(
   }
   return `// 📍 ${filePath} L${start + 1}-${symbol.lineEnd + 1}\n${slice.join("\n")}`;
 }
-

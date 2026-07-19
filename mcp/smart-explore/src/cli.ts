@@ -27,7 +27,8 @@ import { parseFile, formatFoldedView, unfoldSymbolFromFolded } from './parser.js
 import { getDirectoryOutline, getFileOutline } from './outline-cache.js';
 import { findCallers, findCallees, relatedFiles } from './relations.js';
 import { isHashlineEditEnabled } from './hashline.js';
-import { IndexStore, type SearchRow } from './index-store.js';
+import { IndexStore, type SearchMode, type SearchRow } from './index-store.js';
+import { loadEmbeddingConfig } from './config.js';
 import { indexProject, spawnIndexer } from './indexer.js';
 import { getProgressStatus } from './progress.js';
 import { readFile, stat } from 'node:fs/promises';
@@ -79,12 +80,13 @@ function emitError(text: string, exitCode = 1): never {
 
 async function cmdSearch(positional: string[], flags: Record<string, string | boolean>): Promise<void> {
   const queries = positional.map(q => q.trim()).filter(Boolean);
-  if (queries.length === 0) emitError('Usage: smart-explore search <query> [query2 ...] [--path SUBDIR] [--file-pattern PAT] [--max-results N]');
+  if (queries.length === 0) emitError('Usage: smart-explore search <query> [query2 ...] [--path SUBDIR] [--file-pattern PAT] [--max-results N] [--show-scores]');
 
   const rootDir = process.cwd();
   const maxResults = flags['max-results'] ? parseInt(flags['max-results'] as string, 10) : 20;
   const filePattern = (flags['file-pattern'] as string) || null;
   const pathPrefix = (flags['path'] as string) || null;
+  const showScores = flags['show-scores'] === true;
 
   const WAIT_MS = 90_000;
   const POLL_INTERVAL = 500;
@@ -128,17 +130,30 @@ async function cmdSearch(positional: string[], flags: Record<string, string | bo
 
   try {
     if (queries.length === 1) {
-      const rows: SearchRow[] = await store.search(queries[0], filePattern, maxResults, pathPrefix);
-      const formatted = formatSearchResults(queries[0], rows, store.hasEmbedding, loadSearchPreviewMode());
+      const result = await store.search(queries[0], filePattern, maxResults, pathPrefix);
+      const formatted = formatSearchResults(queries[0], result.rows, result.mode, loadSearchPreviewMode(), showScores);
       emit(formatted);
     } else {
+      const results = new Array<Awaited<ReturnType<IndexStore['search']>>>(queries.length);
+      const configuredConcurrency = loadEmbeddingConfig(rootDir)?.maxConcurrency ?? 4;
+      const concurrency = Math.min(Math.max(1, Math.floor(configuredConcurrency)), queries.length);
+      let nextQuery = 0;
+      await Promise.all(Array.from({ length: concurrency }, async () => {
+        while (nextQuery < queries.length) {
+          const index = nextQuery++;
+          results[index] = await store.search(queries[index], filePattern, maxResults, pathPrefix);
+        }
+      }));
+
       const allRows: SearchRow[][] = [];
-      for (const query of queries) {
-        const rows = await store.search(query, filePattern, maxResults, pathPrefix);
-        allRows.push(rows);
+      const modes = new Set<SearchMode>();
+      for (const result of results) {
+        allRows.push(result.rows);
+        modes.add(result.mode);
       }
       const merged = mergeSearchResults(allRows).slice(0, maxResults);
-      const formatted = formatMultiSearchResults(queries, merged, store.hasEmbedding, loadSearchPreviewMode());
+      const mode = modes.size === 1 ? [...modes][0] : "mixed";
+      const formatted = formatMultiSearchResults(queries, merged, mode, loadSearchPreviewMode(), showScores);
       emit(formatted);
     }
   } finally {

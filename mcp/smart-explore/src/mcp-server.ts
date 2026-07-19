@@ -35,7 +35,7 @@ import { parseFile, formatFoldedView, unfoldSymbolFromFolded } from './parser.js
 import { getDirectoryOutline, getFileOutline, warmDirectoryOutlineCache } from './outline-cache.js';
 import { findCallers, findCallees, relatedFiles } from './relations.js';
 import { isHashlineEditEnabled } from './hashline.js';
-import { IndexStore, type SearchRow } from './index-store.js';
+import { IndexStore } from './index-store.js';
 import { indexProject, spawnIndexer } from './indexer.js';
 import { getProgressStatus } from './progress.js';
 import { readFile, stat } from 'node:fs/promises';
@@ -74,6 +74,10 @@ const tools = [
           type: 'string',
           description:
             'Substring or *.wildcard to narrow by ext/dir. No {brace} or **/glob.',
+        },
+        include_scores: {
+          type: 'boolean',
+          description: 'Include mode-specific BM25, RRF, or vector-distance scores (default: false).',
         },
       },
       required: ['query'],
@@ -132,8 +136,8 @@ Try smart_index to rebuild.` }], isError: true };
       }
 
       try {
-        const rows: SearchRow[] = await store.search(args.query, filePattern, maxResults);
-        const formatted = formatSearchResults(args.query, rows, store.hasEmbedding, loadSearchPreviewMode());
+        const result = await store.search(args.query, filePattern, maxResults);
+        const formatted = formatSearchResults(args.query, result.rows, result.mode, loadSearchPreviewMode(), args.include_scores === true);
         return { content: [{ type: 'text' as const, text: formatted }] };
       } finally {
         await store.close();

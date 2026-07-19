@@ -22,9 +22,21 @@ These replace the typical `Glob → Grep → Read` discovery cycle when you want
 
 `smart-explore_smart_search` can exclude subdirectories before scanning via
 relative `exclude_paths` (or the alias `exclude_dirs`).
+BM25 keeps normal English stemming for source content and uses n-gram matching
+for symbol names and signatures, so identifier fragments such as `cache` match
+`cacheResult` without changing the source shown in results.
+Use CLI flag `--show-scores` or MCP argument `include_scores: true` to include
+mode-specific BM25, RRF, or vector-distance values in search output.
 `smart-explore_smart_outline` also accepts a directory and returns the same
 file-level outline format concatenated for discovered files, with a built-in
 safety cap for very large directories.
+
+Caller/callee analysis caches parsed relations until a source file is added,
+removed, or its size/mtime changes. Declarations and scopes come from
+Tree-sitter; call sites still use a lightweight regex. Named imports,
+namespace-qualified calls, and same-file symbols are resolved before unique
+project-wide names. Dynamic dispatch, computed properties, and ambiguous
+duplicate names remain unresolved rather than being attributed arbitrarily.
 
 ## Layout
 

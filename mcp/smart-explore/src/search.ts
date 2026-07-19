@@ -1,11 +1,28 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { loadUserGrammars } from "./parser.js";
-import type { SearchRow } from "./index-store.js";
+import type { SearchMode, SearchRow } from "./index-store.js";
 
 export type SearchPreviewMode = "lines" | "signature";
+export type DisplaySearchMode = SearchMode | "mixed";
+
+function searchModeLabel(mode: DisplaySearchMode): string {
+  switch (mode) {
+    case "hybrid": return "hybrid search (vector + BM25)";
+    case "vector": return "vector search";
+    case "fts": return "BM25 search";
+    case "fts-fallback": return "BM25 fallback (embeddings unavailable)";
+    case "mixed": return "mixed modes";
+  }
+}
+
+function scoreBadge(row: SearchRow): string {
+  if (!Number.isFinite(row._score)) return "";
+  const label = row._score_kind === "rrf" ? "RRF" : row._score_kind === "bm25" ? "BM25" : "distance";
+  return ` [${label}: ${row._score.toFixed(4)}]`;
+}
 
 export function loadSearchPreviewMode(): SearchPreviewMode {
   const configPath = join(homedir(), ".config", "opencode", "smart-explore-config.json");
@@ -63,7 +80,8 @@ const MAX_FILE_SIZE = 512 * 1024;
 export interface SearchableFile {
   absolutePath: string;
   relativePath: string;
-  content: string;
+  mtime: number;
+  size: number;
 }
 
 export interface CollectSearchableFilesOptions {
@@ -132,22 +150,6 @@ function isExcludedPath(relPath: string, excludedPaths: Set<string>): boolean {
   return false;
 }
 
-async function safeReadFile(filePath: string): Promise<string | null> {
-  try {
-    const stats = await stat(filePath);
-    if (stats.size > MAX_FILE_SIZE) return null;
-    if (stats.size === 0) return null;
-
-    const content = await readFile(filePath, "utf-8");
-
-    if (content.slice(0, 1000).includes("\0")) return null;
-
-    return content;
-  } catch {
-    return null;
-  }
-}
-
 export async function collectSearchableFiles(
   rootDir: string,
   options: CollectSearchableFilesOptions = {}
@@ -184,13 +186,19 @@ export async function collectSearchableFiles(
       if (!relativePath.toLowerCase().includes(options.filePattern.toLowerCase())) continue;
     }
 
-    const content = await safeReadFile(filePath);
-    if (!content) continue;
+    let metadata;
+    try {
+      metadata = await stat(filePath);
+    } catch {
+      continue;
+    }
+    if (metadata.size === 0 || metadata.size > MAX_FILE_SIZE) continue;
 
     files.push({
       absolutePath: filePath,
       relativePath,
-      content,
+      mtime: metadata.mtimeMs / 1000,
+      size: metadata.size,
     });
 
     if (options.maxFiles && files.length >= options.maxFiles) {
@@ -228,6 +236,8 @@ export function mergeSearchResults(queryResults: SearchRow[][]): MergedSearchRow
         if (!existing.queryIndices.includes(qi)) existing.queryIndices.push(qi);
         if (row._distance < existing.bestDistance) {
           existing.bestDistance = row._distance;
+          existing._score = row._score;
+          existing._score_kind = row._score_kind;
         }
       } else {
         chunkMap.set(key, { ...row, queryIndices: [qi], bestDistance: row._distance });
@@ -245,11 +255,12 @@ export function mergeSearchResults(queryResults: SearchRow[][]): MergedSearchRow
 export function formatMultiSearchResults(
   queries: string[],
   rows: MergedSearchRow[],
-  hasEmbedding: boolean,
+  searchMode: DisplaySearchMode,
   previewMode: SearchPreviewMode = "lines",
+  showScores = false,
 ): string {
   const parts: string[] = [];
-  const mode = hasEmbedding ? "hybrid (vector + BM25)" : "BM25";
+  const mode = searchModeLabel(searchMode);
   const total = queries.length;
   const rawTotal = rows.reduce((s, r) => s + r.queryIndices.length, 0);
 
@@ -305,7 +316,7 @@ export function formatMultiSearchResults(
       const span = row.line_end - row.line_start + 1;
       const spanTag = span > 50 ? ` (${span} lines)` : "";
 
-      parts.push(`  ${icon} ${name} ${anchor}${spanTag} [${badge}]`);
+      parts.push(`  ${icon} ${name} ${anchor}${spanTag} [${badge}]${showScores ? scoreBadge(row) : ""}`);
       if (previewMode === "signature" && row.signature) {
         parts.push(`    ${row.signature.slice(0, 200)}`);
       } else {
@@ -333,14 +344,15 @@ export function formatMultiSearchResults(
 export function formatSearchResults(
   query: string,
   rows: SearchRow[],
-  hasEmbedding: boolean,
+  searchMode: DisplaySearchMode,
   previewMode: SearchPreviewMode = "lines",
+  showScores = false,
 ): string {
   const parts: string[] = [];
-  const mode = hasEmbedding ? "hybrid (vector + BM25)" : "BM25";
+  const mode = searchModeLabel(searchMode);
 
   parts.push(`🔍 Smart Search: "${query}"`);
-  parts.push(`   ${rows.length} matches (${mode} search)`);
+  parts.push(`   ${rows.length} matches (${mode})`);
   parts.push("");
 
   if (rows.length === 0) {
@@ -386,7 +398,7 @@ export function formatSearchResults(
       const span = row.line_end - row.line_start + 1;
       const spanTag = span > 50 ? ` (${span} lines)` : "";
 
-      parts.push(`  ${icon} ${name} ${anchor}${spanTag}`);
+      parts.push(`  ${icon} ${name} ${anchor}${spanTag}${showScores ? scoreBadge(row) : ""}`);
       if (previewMode === "signature" && row.signature) {
         parts.push(`    ${row.signature.slice(0, 200)}`);
       } else {

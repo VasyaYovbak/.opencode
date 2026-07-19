@@ -15816,6 +15816,7 @@ function resolveGrammarPathWithFallback(language, projectRoot) {
 var QUERIES = {
   jsts: `
 (function_declaration name: (identifier) @name) @func
+(generator_function_declaration name: (identifier) @name) @func
 (lexical_declaration (variable_declarator name: (identifier) @name value: [(arrow_function) (function_expression)])) @const_func
 (lexical_declaration (variable_declarator name: (identifier) @name value: [(array) (object) (new_expression) (ternary_expression)])) @const_var
 (class_declaration name: (type_identifier) @name) @cls
@@ -16612,6 +16613,25 @@ ${slice.join("\n")}`;
 }
 
 // src/search.ts
+function searchModeLabel(mode) {
+  switch (mode) {
+    case "hybrid":
+      return "hybrid search (vector + BM25)";
+    case "vector":
+      return "vector search";
+    case "fts":
+      return "BM25 search";
+    case "fts-fallback":
+      return "BM25 fallback (embeddings unavailable)";
+    case "mixed":
+      return "mixed modes";
+  }
+}
+function scoreBadge(row) {
+  if (!Number.isFinite(row._score)) return "";
+  const label = row._score_kind === "rrf" ? "RRF" : row._score_kind === "bm25" ? "BM25" : "distance";
+  return ` [${label}: ${row._score.toFixed(4)}]`;
+}
 function loadSearchPreviewMode() {
   const configPath = (0, import_node_path3.join)((0, import_node_os3.homedir)(), ".config", "opencode", "smart-explore-config.json");
   if (!(0, import_node_fs3.existsSync)(configPath)) return "lines";
@@ -16746,18 +16766,6 @@ function isExcludedPath(relPath, excludedPaths) {
   }
   return false;
 }
-async function safeReadFile(filePath) {
-  try {
-    const stats = await (0, import_promises.stat)(filePath);
-    if (stats.size > MAX_FILE_SIZE) return null;
-    if (stats.size === 0) return null;
-    const content = await (0, import_promises.readFile)(filePath, "utf-8");
-    if (content.slice(0, 1e3).includes("\0")) return null;
-    return content;
-  } catch {
-    return null;
-  }
-}
 async function collectSearchableFiles(rootDir, options = {}) {
   const projectRoot = options.projectRoot || rootDir;
   const userConfig = loadUserGrammars(projectRoot);
@@ -16785,12 +16793,18 @@ async function collectSearchableFiles(rootDir, options = {}) {
     if (options.filePattern) {
       if (!relativePath.toLowerCase().includes(options.filePattern.toLowerCase())) continue;
     }
-    const content = await safeReadFile(filePath);
-    if (!content) continue;
+    let metadata;
+    try {
+      metadata = await (0, import_promises.stat)(filePath);
+    } catch {
+      continue;
+    }
+    if (metadata.size === 0 || metadata.size > MAX_FILE_SIZE) continue;
     files.push({
       absolutePath: filePath,
       relativePath,
-      content
+      mtime: metadata.mtimeMs / 1e3,
+      size: metadata.size
     });
     if (options.maxFiles && files.length >= options.maxFiles) {
       truncated = true;
@@ -16823,11 +16837,11 @@ var SYMBOL_ICONS = {
   metadata: "\u25CA",
   reference: "\u2197"
 };
-function formatSearchResults(query, rows, hasEmbedding, previewMode = "lines") {
+function formatSearchResults(query, rows, searchMode, previewMode = "lines", showScores = false) {
   const parts = [];
-  const mode = hasEmbedding ? "hybrid (vector + BM25)" : "BM25";
+  const mode = searchModeLabel(searchMode);
   parts.push(`\u{1F50D} Smart Search: "${query}"`);
-  parts.push(`   ${rows.length} matches (${mode} search)`);
+  parts.push(`   ${rows.length} matches (${mode})`);
   parts.push("");
   if (rows.length === 0) {
     parts.push("   No matches found.");
@@ -16860,7 +16874,7 @@ function formatSearchResults(query, rows, hasEmbedding, previewMode = "lines") {
       const name = row.symbol_name || "(text chunk)";
       const span = row.line_end - row.line_start + 1;
       const spanTag = span > 50 ? ` (${span} lines)` : "";
-      parts.push(`  ${icon} ${name} ${anchor}${spanTag}`);
+      parts.push(`  ${icon} ${name} ${anchor}${spanTag}${showScores ? scoreBadge(row) : ""}`);
       if (previewMode === "signature" && row.signature) {
         parts.push(`    ${row.signature.slice(0, 200)}`);
       } else {
@@ -17222,6 +17236,7 @@ var CALL_IGNORE = /* @__PURE__ */ new Set([
   "resolve",
   "reject"
 ]);
+var relationCache = /* @__PURE__ */ new Map();
 async function* walkDir2(dir, maxDepth = 20) {
   if (maxDepth <= 0) return;
   let entries;
@@ -17241,7 +17256,7 @@ async function* walkDir2(dir, maxDepth = 20) {
     }
   }
 }
-async function safeReadFile2(filePath) {
+async function safeReadFile(filePath) {
   try {
     const stats = await (0, import_promises3.stat)(filePath);
     if (stats.size === 0 || stats.size > MAX_FILE_SIZE2) return null;
@@ -17253,29 +17268,49 @@ async function safeReadFile2(filePath) {
   }
 }
 async function collectProject(rootDir, filePattern, pathPrefix) {
-  const files = [];
   const normalizedPrefix = pathPrefix ? pathPrefix.replace(/^\.\//, "").replace(/\/$/, "") : null;
+  const candidates = [];
   for await (const absolutePath of walkDir2(rootDir)) {
     const relativePath = (0, import_node_path5.relative)(rootDir, absolutePath);
     if (normalizedPrefix && !relativePath.startsWith(normalizedPrefix)) continue;
     if (filePattern && !relativePath.toLowerCase().includes(filePattern.toLowerCase())) continue;
-    const content = await safeReadFile2(absolutePath);
+    try {
+      const metadata = await (0, import_promises3.stat)(absolutePath);
+      if (metadata.size === 0 || metadata.size > MAX_FILE_SIZE2) continue;
+      candidates.push({ absolutePath, relativePath, mtimeMs: metadata.mtimeMs, size: metadata.size });
+    } catch {
+    }
+  }
+  candidates.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  const cacheKey = JSON.stringify([(0, import_node_path5.resolve)(rootDir), filePattern?.toLowerCase() ?? "", normalizedPrefix ?? ""]);
+  const fingerprint = candidates.map((file) => `${file.relativePath}:${file.mtimeMs}:${file.size}`).join("\n");
+  const cached2 = relationCache.get(cacheKey);
+  if (cached2?.fingerprint === fingerprint) return cached2.project;
+  const files = [];
+  for (const candidate of candidates) {
+    const { absolutePath, relativePath } = candidate;
+    const content = await safeReadFile(absolutePath);
     if (!content) continue;
     files.push({ absolutePath, relativePath, content });
   }
   const parsed = parseFilesBatch(files, rootDir);
   const symbols = flattenProjectSymbols(parsed);
-  const symbolByName = /* @__PURE__ */ new Map();
+  const symbolIndex = { byName: /* @__PURE__ */ new Map(), byShortName: /* @__PURE__ */ new Map() };
   for (const symbol of symbols) {
-    if (!symbolByName.has(symbol.name)) symbolByName.set(symbol.name, symbol);
+    const shortName = symbol.name.split(".").pop();
+    symbolIndex.byName.set(symbol.name, [...symbolIndex.byName.get(symbol.name) ?? [], symbol]);
+    symbolIndex.byShortName.set(shortName, [...symbolIndex.byShortName.get(shortName) ?? [], symbol]);
   }
   const calls = [];
   for (const file of files) {
     const folded = parsed.get(file.relativePath);
     if (!folded) continue;
-    calls.push(...extractCalls(file.relativePath, file.content, folded.symbols, symbolByName));
+    calls.push(...extractCalls(rootDir, file.relativePath, file.content, folded.symbols, symbolIndex));
   }
-  return { rootDir, files, parsed, symbols, calls };
+  const project = { rootDir, files, parsed, symbols, calls };
+  relationCache.set(cacheKey, { fingerprint, project });
+  if (relationCache.size > 20) relationCache.delete(relationCache.keys().next().value);
+  return project;
 }
 function flattenProjectSymbols(parsed) {
   const result = [];
@@ -17297,7 +17332,7 @@ function flattenProjectSymbols(parsed) {
   }
   return result;
 }
-function extractCalls(filePath, content, symbols, symbolByName) {
+function extractCalls(rootDir, filePath, content, symbols, symbolIndex) {
   const flatSymbols = [];
   const visit = (items, parent) => {
     for (const item of items) {
@@ -17309,6 +17344,7 @@ function extractCalls(filePath, content, symbols, symbolByName) {
   visit(symbols);
   const lines = content.split("\n");
   const edges = [];
+  const importTargets = extractImportTargets(rootDir, filePath, content);
   const callRegex = /\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\s*\(/g;
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     const line = stripLineComment(lines[lineIndex]);
@@ -17321,12 +17357,17 @@ function extractCalls(filePath, content, symbols, symbolByName) {
       const caller = findEnclosingSymbol(flatSymbols, lineIndex);
       if (!caller) continue;
       if (caller.name === callee || caller.name.endsWith(`.${callee}`)) continue;
-      const target = symbolByName.get(callee) || [...symbolByName.values()].find((s) => s.name.endsWith(`.${callee}`));
+      const receiver = callText.includes(".") ? callText.slice(0, callText.indexOf(".")) : null;
+      const imported = importTargets.get(receiver ?? callee);
+      const resolvedName = receiver ? callee : imported?.importedName ?? callee;
+      const exactCandidates = symbolIndex.byName.get(callText) ?? [];
+      const shortCandidates = symbolIndex.byShortName.get(resolvedName) ?? [];
+      const target = exactCandidates.find((symbol) => symbol.filePath === filePath) ?? (exactCandidates.length === 1 ? exactCandidates[0] : void 0) ?? (imported ? shortCandidates.find((symbol) => symbol.filePath === imported.filePath) : void 0) ?? shortCandidates.find((symbol) => symbol.filePath === filePath) ?? (shortCandidates.length === 1 ? shortCandidates[0] : void 0);
       edges.push({
         caller: caller.name,
         callerFile: filePath,
         callerLine: caller.lineStart + 1,
-        callee,
+        callee: target?.name.split(".").pop() ?? resolvedName,
         calleeFile: target?.filePath,
         calleeLine: target ? target.lineStart + 1 : void 0,
         callText,
@@ -17335,6 +17376,25 @@ function extractCalls(filePath, content, symbols, symbolByName) {
     }
   }
   return edges;
+}
+function extractImportTargets(rootDir, sourceFile, content) {
+  const targets = /* @__PURE__ */ new Map();
+  const pattern = /\bimport\s+([^;\n]+?)\s+from\s+["']([^"']+)["']/g;
+  let match;
+  while (match = pattern.exec(content)) {
+    const targetFile = resolveImport(rootDir, sourceFile, match[2]);
+    if (!targetFile) continue;
+    const clause = match[1].trim();
+    const namespace = clause.match(/\*\s+as\s+([A-Za-z_$][\w$]*)/);
+    if (namespace) targets.set(namespace[1], { filePath: targetFile });
+    const named = clause.match(/\{([^}]+)\}/);
+    if (!named) continue;
+    for (const specifier of named[1].split(",")) {
+      const [importedName, localName = importedName] = specifier.trim().split(/\s+as\s+/);
+      if (importedName) targets.set(localName, { filePath: targetFile, importedName });
+    }
+  }
+  return targets;
 }
 function stripLineComment(line) {
   return line.replace(/\/\/.*$/, "").replace(/#.*$/, "");
@@ -17524,6 +17584,7 @@ function loadEmbeddingConfig(projectRoot) {
 }
 
 // src/embed.ts
+var EMBEDDING_TIMEOUT_MS = 3e4;
 var DEFAULT_QUERY_PROMPT2 = "Instruct: Given a coding question, retrieve relevant code or docs.\nQuery: ";
 var DEFAULT_MAX_BATCH_SIZE2 = 64;
 var DEFAULT_MAX_CONCURRENCY2 = 4;
@@ -17567,14 +17628,25 @@ var F2LLMEmbeddingFunction = class extends import_embedding.TextEmbeddingFunctio
         const resp = await fetch(`${this.#baseUrl}/embeddings`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: this.#model, input: batch.texts })
+          body: JSON.stringify({ model: this.#model, input: batch.texts }),
+          signal: AbortSignal.timeout(EMBEDDING_TIMEOUT_MS)
         });
         if (!resp.ok) {
           const body = await resp.text().catch(() => "");
           throw new Error(`Embedding HTTP ${resp.status}: ${body}`);
         }
         const data = await resp.json();
-        for (const d of data.data) allResults[batch.offset + d.index] = d.embedding;
+        if (!Array.isArray(data.data) || data.data.length !== batch.texts.length) {
+          throw new Error(`Embedding response contained ${data.data?.length ?? 0} vectors for ${batch.texts.length} inputs`);
+        }
+        const seenIndices = /* @__PURE__ */ new Set();
+        for (const d of data.data) {
+          if (!Number.isInteger(d.index) || d.index < 0 || d.index >= batch.texts.length || seenIndices.has(d.index) || d.embedding?.length !== this.#dim || !d.embedding.every(Number.isFinite)) {
+            throw new Error(`Embedding response contained an invalid index or vector dimension (expected ${this.#dim})`);
+          }
+          seenIndices.add(d.index);
+          allResults[batch.offset + d.index] = d.embedding;
+        }
         if (mode === "doc") embeddingProgressHandler?.(batch.texts.length);
       }
     });
@@ -17622,6 +17694,8 @@ var { connect, Index, rerankers } = import_lancedb.default;
 var TABLE_NAME = "chunks";
 var INDEX_DIR_NAME = ".smart-explore-mcp-cache";
 var FTS_COLUMNS = ["content", "symbol_name", "signature"];
+var FTS_INDEX_VERSION = 3;
+var UPDATE_ID_COLUMN = "update_id";
 function escapeSqlString(s) {
   return s.replace(/'/g, "''");
 }
@@ -17662,10 +17736,13 @@ var IndexStore = class _IndexStore {
       table = await db.openTable(TABLE_NAME);
       const schema = await table.schema();
       hasEmbedding = schema.metadata?.has("embedding_functions") ?? false;
+      if (!schema.fields.some((field) => field.name === UPDATE_ID_COLUMN)) {
+        await table.addColumns([{ name: UPDATE_ID_COLUMN, valueSql: "''" }]);
+      }
       await _IndexStore.ensureFtsIndices(table);
     } else {
       const embedFn = getEmbeddingFunction(projectRoot);
-      hasEmbedding = embedFn !== null;
+      hasEmbedding = Boolean(embedFn);
       const placeholder = [
         {
           content: "",
@@ -17678,10 +17755,11 @@ var IndexStore = class _IndexStore {
           hash_start: "",
           language: "",
           content_hash: "",
-          file_mtime: 0
+          file_mtime: 0,
+          update_id: ""
         }
       ];
-      if (hasEmbedding) {
+      if (embedFn) {
         table = await db.createTable(TABLE_NAME, placeholder, {
           mode: "overwrite",
           embeddingFunction: {
@@ -17703,7 +17781,6 @@ var IndexStore = class _IndexStore {
       try {
         rrf = await rerankers.RRFReranker.create();
       } catch {
-        rrf = null;
       }
     }
     return new _IndexStore(projectRoot, indexDir, db, table, hasEmbedding, rrf);
@@ -17714,15 +17791,29 @@ var IndexStore = class _IndexStore {
   }
   static async createFtsIndices(table) {
     for (const col of FTS_COLUMNS) {
-      await table.createIndex(col, { config: Index.fts() });
+      const config2 = col === "content" ? Index.fts() : Index.fts({
+        baseTokenizer: "ngram",
+        ngramMinLength: 3,
+        ngramMaxLength: col === "symbol_name" ? 8 : 5,
+        stem: false,
+        removeStopWords: false
+      });
+      await table.createIndex(col, {
+        config: config2,
+        name: `${col}_fts_v${FTS_INDEX_VERSION}`,
+        replace: true,
+        waitTimeoutSeconds: 60
+      });
     }
   }
   static async ensureFtsIndices(table) {
     const existing = await table.listIndices();
-    const indexedCols = new Set(existing.map((i) => i.columns?.[0]).filter(Boolean));
-    for (const col of FTS_COLUMNS) {
-      if (!indexedCols.has(col)) {
-        await table.createIndex(col, { config: Index.fts() });
+    const expectedNames = new Set(FTS_COLUMNS.map((col) => `${col}_fts_v${FTS_INDEX_VERSION}`));
+    if (existing.filter((index) => expectedNames.has(index.name)).length === FTS_COLUMNS.length) return;
+    await _IndexStore.createFtsIndices(table);
+    for (const index of existing) {
+      if (index.indexType === "FTS" && FTS_COLUMNS.includes(index.columns?.[0]) && !expectedNames.has(index.name)) {
+        await table.dropIndex(index.name);
       }
     }
   }
@@ -17734,6 +17825,7 @@ var IndexStore = class _IndexStore {
   }
   async upsertChunkFiles(files, options) {
     const maxRowsPerBatch = options?.maxRowsPerBatch ?? 512;
+    const updateId = (0, import_node_crypto2.randomUUID)();
     let rows = [];
     let batchFiles = 0;
     let batchChunks = 0;
@@ -17745,30 +17837,41 @@ var IndexStore = class _IndexStore {
       batchFiles = 0;
       batchChunks = 0;
     };
+    try {
+      for (const file of files) {
+        batchFiles++;
+        batchChunks += file.chunks.length;
+        for (const c of file.chunks) {
+          rows.push({
+            content: c.content,
+            file_path: file.filePath,
+            symbol_name: c.symbolName,
+            kind: c.kind,
+            signature: c.signature,
+            line_start: c.lineStart,
+            line_end: c.lineEnd,
+            hash_start: c.hashStart ?? "",
+            language: c.language,
+            content_hash: hashContent(c.content),
+            file_mtime: file.mtime,
+            update_id: updateId
+          });
+        }
+        if (rows.length >= maxRowsPerBatch) await flush();
+      }
+      await flush();
+    } catch (error2) {
+      await this.#table.delete(`update_id = '${escapeSqlString(updateId)}'`).catch(() => {
+      });
+      throw error2;
+    }
+    if (batchFiles > 0) options?.onBatch?.(batchFiles, batchChunks);
     for (const file of files) {
       const escaped = escapeSqlString(file.filePath);
-      await this.#table.delete(`file_path = '${escaped}'`);
-      batchFiles++;
-      batchChunks += file.chunks.length;
-      for (const c of file.chunks) {
-        rows.push({
-          content: c.content,
-          file_path: file.filePath,
-          symbol_name: c.symbolName,
-          kind: c.kind,
-          signature: c.signature,
-          line_start: c.lineStart,
-          line_end: c.lineEnd,
-          hash_start: c.hashStart ?? "",
-          language: c.language,
-          content_hash: hashContent(c.content),
-          file_mtime: file.mtime
-        });
-      }
-      if (rows.length >= maxRowsPerBatch) await flush();
+      const predicate = file.chunks.length > 0 ? `file_path = '${escaped}' AND update_id != '${escapeSqlString(updateId)}'` : `file_path = '${escaped}'`;
+      await this.#table.delete(predicate);
     }
-    await flush();
-    if (batchFiles > 0) options?.onBatch?.(batchFiles, batchChunks);
+    if (files.length > 0) await _IndexStore.createFtsIndices(this.#table);
   }
   async deleteFile(filePath) {
     const escaped = escapeSqlString(filePath);
@@ -17776,12 +17879,6 @@ var IndexStore = class _IndexStore {
   }
   async search(query, filePattern, limit, pathPrefix) {
     const overfetch = Math.min(limit * 3, 100);
-    let q;
-    if (this.#hasEmbedding) {
-      q = this.#table.search(query).limit(overfetch);
-    } else {
-      q = this.#table.search(query, "fts").limit(overfetch);
-    }
     const conditions = [];
     if (filePattern) {
       const likePattern = filePattern.replace(/\*/g, "%");
@@ -17791,25 +17888,42 @@ var IndexStore = class _IndexStore {
       const normalized = pathPrefix.replace(/^\.\//, "").replace(/\/$/, "");
       conditions.push(`file_path LIKE '${escapeSqlString(normalized)}%'`);
     }
-    if (conditions.length > 0) {
-      q = q.where(conditions.join(" AND "));
+    const run = async (queryType) => {
+      let q = this.#table.search(query, queryType).limit(overfetch);
+      if (conditions.length > 0) q = q.where(conditions.join(" AND "));
+      return q.toArray();
+    };
+    const toRow = (r) => {
+      const scoreKind = r._relevance_score !== void 0 ? "rrf" : r._score !== void 0 ? "bm25" : "distance";
+      const score = r._relevance_score ?? r._score ?? r._distance ?? 0;
+      return {
+        content: r.content,
+        file_path: r.file_path,
+        symbol_name: r.symbol_name,
+        kind: r.kind,
+        signature: r.signature,
+        line_start: r.line_start,
+        line_end: r.line_end,
+        hash_start: r.hash_start,
+        language: r.language,
+        _distance: scoreKind === "distance" ? score : -score,
+        _score: score,
+        _score_kind: scoreKind
+      };
+    };
+    if (!this.#hasEmbedding) {
+      return { rows: (await run("fts")).slice(0, limit).map((r) => toRow(r)), mode: "fts" };
     }
-    if (this.#hasEmbedding && this.#rrf) {
-      q = q.rerank(this.#rrf);
+    if (!this.#rrf) {
+      return { rows: (await run("fts")).slice(0, limit).map((r) => toRow(r)), mode: "fts-fallback" };
     }
-    const results = await q.toArray();
-    return results.slice(0, limit).map((r) => ({
-      content: r.content,
-      file_path: r.file_path,
-      symbol_name: r.symbol_name,
-      kind: r.kind,
-      signature: r.signature,
-      line_start: r.line_start,
-      line_end: r.line_end,
-      hash_start: r.hash_start,
-      language: r.language,
-      _distance: r._distance ?? 0
-    }));
+    try {
+      let hybrid = this.#table.search(query).fullTextSearch(query).rerank(this.#rrf).limit(overfetch);
+      if (conditions.length > 0) hybrid = hybrid.where(conditions.join(" AND "));
+      return { rows: (await hybrid.toArray()).slice(0, limit).map((r) => toRow(r)), mode: "hybrid" };
+    } catch {
+      return { rows: (await run("fts")).slice(0, limit).map((r) => toRow(r)), mode: "fts-fallback" };
+    }
   }
   async countRows() {
     return this.#table.countRows();
@@ -17830,11 +17944,15 @@ var IndexStore = class _IndexStore {
       this.#table.close();
     } catch {
     }
+    try {
+      await this.#db.close();
+    } catch {
+    }
   }
 };
 
 // src/indexer.ts
-var import_node_fs8 = require("node:fs");
+var import_promises4 = require("node:fs/promises");
 var import_node_child_process2 = require("node:child_process");
 
 // src/chunker.ts
@@ -18080,10 +18198,12 @@ async function indexProject(projectRoot, options) {
   let processed = 0;
   let indexedChunks = 0;
   let chunksTotal = 0;
+  let store;
   try {
-    const store = await IndexStore.open(projectRoot);
+    const activeStore = await IndexStore.open(projectRoot);
+    store = activeStore;
     const { files } = await collectSearchableFiles(projectRoot, { projectRoot });
-    const indexedFiles = force ? /* @__PURE__ */ new Map() : await store.getIndexedFiles();
+    const indexedFiles = force ? /* @__PURE__ */ new Map() : await activeStore.getIndexedFiles();
     const changedFiles = [];
     for (const file of files) {
       const storedMtime = indexedFiles.get(file.relativePath);
@@ -18091,8 +18211,7 @@ async function indexProject(projectRoot, options) {
         changedFiles.push(file);
         continue;
       }
-      const actualMtime = (0, import_node_fs8.statSync)(file.absolutePath).mtimeMs / 1e3;
-      if (actualMtime > storedMtime) {
+      if (file.mtime !== storedMtime) {
         changedFiles.push(file);
       }
     }
@@ -18104,9 +18223,17 @@ async function indexProject(projectRoot, options) {
       }
     }
     for (const path of deletedPaths) {
-      await store.deleteFile(path);
+      await activeStore.deleteFile(path);
     }
-    totalFiles = changedFiles.length;
+    const readableChangedFiles = [];
+    for (const file of changedFiles) {
+      try {
+        const content = await (0, import_promises4.readFile)(file.absolutePath, "utf-8");
+        readableChangedFiles.push({ ...file, content: content.slice(0, 1e3).includes("\0") ? "" : content });
+      } catch {
+      }
+    }
+    totalFiles = readableChangedFiles.length;
     processed = 0;
     indexedChunks = 0;
     chunksTotal = 0;
@@ -18133,7 +18260,6 @@ async function indexProject(projectRoot, options) {
     };
     if (totalFiles === 0) {
       writeIndexProgress("done", true);
-      await store.close();
       return {
         filesProcessed: 0,
         filesTotal: 0,
@@ -18142,29 +18268,28 @@ async function indexProject(projectRoot, options) {
         duration: Date.now() - startTime
       };
     }
-    const parsed = parseFilesBatch(changedFiles, projectRoot);
-    const filesByPath = new Map(changedFiles.map((file) => [file.relativePath, file]));
+    const parsed = parseFilesBatch(readableChangedFiles, projectRoot);
+    const filesByPath = new Map(readableChangedFiles.map((file) => [file.relativePath, file]));
     const chunkFiles = [];
     for (const [relPath, parsedFile] of parsed) {
       const file = filesByPath.get(relPath);
       if (!file) continue;
       const chunks = chunkFromParsed(file.content, parsedFile);
-      const mtime = (0, import_node_fs8.statSync)(file.absolutePath).mtimeMs / 1e3;
-      chunkFiles.push({ filePath: relPath, mtime, chunks });
+      chunkFiles.push({ filePath: relPath, mtime: file.mtime, chunks });
     }
     chunksTotal = chunkFiles.reduce((sum, file) => sum + file.chunks.length, 0);
     writeIndexProgress("indexing", true);
     try {
-      if (store.hasEmbedding && chunksTotal > 0) {
+      if (activeStore.hasEmbedding && chunksTotal > 0) {
         setEmbeddingProgressHandler((chunkCount) => {
           indexedChunks = Math.min(chunksTotal, indexedChunks + chunkCount);
           writeIndexProgress("indexing");
         });
       }
-      await store.upsertChunkFiles(chunkFiles, {
+      await activeStore.upsertChunkFiles(chunkFiles, {
         onBatch: (filesProcessed, chunksIndexed) => {
           processed += filesProcessed;
-          if (!store.hasEmbedding) {
+          if (!activeStore.hasEmbedding) {
             indexedChunks = Math.min(chunksTotal, indexedChunks + chunksIndexed);
           }
           writeIndexProgress("indexing", true);
@@ -18173,7 +18298,6 @@ async function indexProject(projectRoot, options) {
     } finally {
       setEmbeddingProgressHandler(null);
     }
-    await store.close();
     processed = totalFiles;
     indexedChunks = chunksTotal;
     writeIndexProgress("done", true);
@@ -18200,6 +18324,8 @@ async function indexProject(projectRoot, options) {
       error: error2 instanceof Error ? error2.message : String(error2)
     });
     throw error2;
+  } finally {
+    await store?.close();
   }
 }
 function spawnIndexer(projectRoot) {
@@ -18211,7 +18337,7 @@ function spawnIndexer(projectRoot) {
 }
 
 // src/mcp-server.ts
-var import_promises4 = require("node:fs/promises");
+var import_promises5 = require("node:fs/promises");
 var import_node_path9 = require("node:path");
 var packageVersion = true ? "12.2.0" : "0.0.0-dev";
 var _log = (...args) => process.stderr.write(args.join(" ") + "\n");
@@ -18245,6 +18371,10 @@ var tools = [
         file_pattern: {
           type: "string",
           description: "Substring or *.wildcard to narrow by ext/dir. No {brace} or **/glob."
+        },
+        include_scores: {
+          type: "boolean",
+          description: "Include mode-specific BM25, RRF, or vector-distance scores (default: false)."
         }
       },
       required: ["query"]
@@ -18295,8 +18425,8 @@ Try smart_index to rebuild.` }], isError: true };
 Try smart_index to rebuild.` }], isError: true };
       }
       try {
-        const rows = await store.search(args.query, filePattern, maxResults);
-        const formatted = formatSearchResults(args.query, rows, store.hasEmbedding, loadSearchPreviewMode());
+        const result = await store.search(args.query, filePattern, maxResults);
+        const formatted = formatSearchResults(args.query, result.rows, result.mode, loadSearchPreviewMode(), args.include_scores === true);
         return { content: [{ type: "text", text: formatted }] };
       } finally {
         await store.close();
@@ -18370,7 +18500,7 @@ ${available}`;
     },
     handler: async (args) => {
       const filePath = (0, import_node_path9.resolve)(args.file_path);
-      const target = await (0, import_promises4.stat)(filePath);
+      const target = await (0, import_promises5.stat)(filePath);
       if (target.isDirectory()) {
         const { outlines, truncated, skipped, cached: cached2, parsed: parsed2 } = await getDirectoryOutline(filePath, MAX_OUTLINE_DIRECTORY_FILES);
         if (outlines.length > 0) {
@@ -18402,7 +18532,7 @@ ${available}`;
           ]
         };
       }
-      const content = await (0, import_promises4.readFile)(filePath, "utf-8");
+      const content = await (0, import_promises5.readFile)(filePath, "utf-8");
       const parsed = parseFile(content, filePath);
       if (parsed.symbols.length > 0) {
         const text = formatFoldedView(parsed) + "\n\n\u2500\u2500 Actions \u2500\u2500\n  To read any symbol above: use smart_unfold with file_path and symbol_name\n  Do NOT use Read with offset/limit \u2014 use smart_unfold instead";

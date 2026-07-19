@@ -44,9 +44,24 @@ interface ParsedProject {
   rootDir: string;
   files: Array<{ absolutePath: string; relativePath: string; content: string }>;
   parsed: Map<string, FoldedFile>;
-  symbols: Array<{ name: string; filePath: string; lineStart: number; lineEnd: number; signature: string }>;
+  symbols: ProjectSymbol[];
   calls: CallEdge[];
 }
+
+interface ProjectSymbol {
+  name: string;
+  filePath: string;
+  lineStart: number;
+  lineEnd: number;
+  signature: string;
+}
+
+interface SymbolIndex {
+  byName: Map<string, ProjectSymbol[]>;
+  byShortName: Map<string, ProjectSymbol[]>;
+}
+
+const relationCache = new Map<string, { fingerprint: string; project: ParsedProject }>();
 
 async function* walkDir(dir: string, maxDepth = 20): AsyncGenerator<string> {
   if (maxDepth <= 0) return;
@@ -82,12 +97,28 @@ async function safeReadFile(filePath: string): Promise<string | null> {
 }
 
 async function collectProject(rootDir: string, filePattern?: string, pathPrefix?: string): Promise<ParsedProject> {
-  const files: ParsedProject["files"] = [];
   const normalizedPrefix = pathPrefix ? pathPrefix.replace(/^\.\//, '').replace(/\/$/, '') : null;
+  const candidates: Array<{ absolutePath: string; relativePath: string; mtimeMs: number; size: number }> = [];
   for await (const absolutePath of walkDir(rootDir)) {
     const relativePath = relative(rootDir, absolutePath);
     if (normalizedPrefix && !relativePath.startsWith(normalizedPrefix)) continue;
     if (filePattern && !relativePath.toLowerCase().includes(filePattern.toLowerCase())) continue;
+    try {
+      const metadata = await stat(absolutePath);
+      if (metadata.size === 0 || metadata.size > MAX_FILE_SIZE) continue;
+      candidates.push({ absolutePath, relativePath, mtimeMs: metadata.mtimeMs, size: metadata.size });
+    } catch {}
+  }
+
+  candidates.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  const cacheKey = JSON.stringify([resolve(rootDir), filePattern?.toLowerCase() ?? "", normalizedPrefix ?? ""]);
+  const fingerprint = candidates.map(file => `${file.relativePath}:${file.mtimeMs}:${file.size}`).join("\n");
+  const cached = relationCache.get(cacheKey);
+  if (cached?.fingerprint === fingerprint) return cached.project;
+
+  const files: ParsedProject["files"] = [];
+  for (const candidate of candidates) {
+    const { absolutePath, relativePath } = candidate;
     const content = await safeReadFile(absolutePath);
     if (!content) continue;
     files.push({ absolutePath, relativePath, content });
@@ -95,19 +126,24 @@ async function collectProject(rootDir: string, filePattern?: string, pathPrefix?
 
   const parsed = parseFilesBatch(files, rootDir);
   const symbols = flattenProjectSymbols(parsed);
-  const symbolByName = new Map<string, typeof symbols[number]>();
+  const symbolIndex: SymbolIndex = { byName: new Map(), byShortName: new Map() };
   for (const symbol of symbols) {
-    if (!symbolByName.has(symbol.name)) symbolByName.set(symbol.name, symbol);
+    const shortName = symbol.name.split(".").pop()!;
+    symbolIndex.byName.set(symbol.name, [...(symbolIndex.byName.get(symbol.name) ?? []), symbol]);
+    symbolIndex.byShortName.set(shortName, [...(symbolIndex.byShortName.get(shortName) ?? []), symbol]);
   }
 
   const calls: CallEdge[] = [];
   for (const file of files) {
     const folded = parsed.get(file.relativePath);
     if (!folded) continue;
-    calls.push(...extractCalls(file.relativePath, file.content, folded.symbols, symbolByName));
+    calls.push(...extractCalls(rootDir, file.relativePath, file.content, folded.symbols, symbolIndex));
   }
 
-  return { rootDir, files, parsed, symbols, calls };
+  const project = { rootDir, files, parsed, symbols, calls };
+  relationCache.set(cacheKey, { fingerprint, project });
+  if (relationCache.size > 20) relationCache.delete(relationCache.keys().next().value!);
+  return project;
 }
 
 function flattenProjectSymbols(parsed: Map<string, FoldedFile>): ParsedProject["symbols"] {
@@ -132,10 +168,11 @@ function flattenProjectSymbols(parsed: Map<string, FoldedFile>): ParsedProject["
 }
 
 function extractCalls(
+  rootDir: string,
   filePath: string,
   content: string,
   symbols: CodeSymbol[],
-  symbolByName: Map<string, ParsedProject["symbols"][number]>
+  symbolIndex: SymbolIndex,
 ): CallEdge[] {
   const flatSymbols: ParsedProject["symbols"] = [];
   const visit = (items: CodeSymbol[], parent?: string) => {
@@ -149,6 +186,7 @@ function extractCalls(
 
   const lines = content.split("\n");
   const edges: CallEdge[] = [];
+  const importTargets = extractImportTargets(rootDir, filePath, content);
   const callRegex = /\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\s*\(/g;
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -164,12 +202,23 @@ function extractCalls(
       if (!caller) continue;
       if (caller.name === callee || caller.name.endsWith(`.${callee}`)) continue;
 
-      const target = symbolByName.get(callee) || [...symbolByName.values()].find(s => s.name.endsWith(`.${callee}`));
+      const receiver = callText.includes(".") ? callText.slice(0, callText.indexOf(".")) : null;
+      const imported = importTargets.get(receiver ?? callee);
+      const resolvedName = receiver ? callee : imported?.importedName ?? callee;
+      const exactCandidates = symbolIndex.byName.get(callText) ?? [];
+      const shortCandidates = symbolIndex.byShortName.get(resolvedName) ?? [];
+      const target = exactCandidates.find(symbol => symbol.filePath === filePath)
+        ?? (exactCandidates.length === 1 ? exactCandidates[0] : undefined)
+        ?? (imported
+          ? shortCandidates.find(symbol => symbol.filePath === imported.filePath)
+          : undefined)
+        ?? shortCandidates.find(symbol => symbol.filePath === filePath)
+        ?? (shortCandidates.length === 1 ? shortCandidates[0] : undefined);
       edges.push({
         caller: caller.name,
         callerFile: filePath,
         callerLine: caller.lineStart + 1,
-        callee,
+        callee: target?.name.split(".").pop() ?? resolvedName,
         calleeFile: target?.filePath,
         calleeLine: target ? target.lineStart + 1 : undefined,
         callText,
@@ -179,6 +228,26 @@ function extractCalls(
   }
 
   return edges;
+}
+
+function extractImportTargets(rootDir: string, sourceFile: string, content: string): Map<string, { filePath: string; importedName?: string }> {
+  const targets = new Map<string, { filePath: string; importedName?: string }>();
+  const pattern = /\bimport\s+([^;\n]+?)\s+from\s+["']([^"']+)["']/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(content))) {
+    const targetFile = resolveImport(rootDir, sourceFile, match[2]);
+    if (!targetFile) continue;
+    const clause = match[1].trim();
+    const namespace = clause.match(/\*\s+as\s+([A-Za-z_$][\w$]*)/);
+    if (namespace) targets.set(namespace[1], { filePath: targetFile });
+    const named = clause.match(/\{([^}]+)\}/);
+    if (!named) continue;
+    for (const specifier of named[1].split(",")) {
+      const [importedName, localName = importedName] = specifier.trim().split(/\s+as\s+/);
+      if (importedName) targets.set(localName, { filePath: targetFile, importedName });
+    }
+  }
+  return targets;
 }
 
 function stripLineComment(line: string): string {
