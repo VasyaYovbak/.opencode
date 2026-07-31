@@ -1,7 +1,14 @@
 {
   "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
-  "disabled_mcps": ["context7", "grep_app", "lsp", "ast_grep"],
-  "hashline_edit": true
+  "disabled_mcps": [
+    "context7",
+    "grep_app",
+    "lsp",
+    "ast_grep"
+  ],
+  "hashline_edit": false,
+  "disabled_hooks": [
+    "todo-continuation-enforcer"
+  ]
 }
 //websearch
-

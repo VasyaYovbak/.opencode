@@ -13,12 +13,14 @@ function flexModel(
   id: string,
   name: string,
   cost: Record<string, unknown>,
+  options: Record<string, unknown> = {},
 ) {
   return {
     id,
     name,
     cost,
-    options: { serviceTier: "flex" },
+    limit: { context: 200_000, output: 32_000 },
+    options: { serviceTier: "flex", ...options },
     variants: reasoningVariants,
   }
 }
@@ -38,30 +40,30 @@ const flexModels = {
   }),
 
   "gpt-5.6-terra-flex": flexModel("gpt-5.6-terra", "gpt-5.6 terra FLEX", {
-    input: 1.25,
-    cache_read: 0.125,
-    cache_write: 1.5625,
-    output: 7.5,
+    input: 1,
+    cache_read: 0.1,
+    cache_write: 1.25,
+    output: 6,
     context_over_200k: {
-      input: 2.5,
-      cache_read: 0.25,
-      cache_write: 3.125,
-      output: 11.25,
+      input: 2,
+      cache_read: 0.2,
+      cache_write: 2.5,
+      output: 9,
     },
   }),
   "gpt-5.6-luna-flex": flexModel("gpt-5.6-luna", "gpt-5.6 luna FLEX", {
-    input: 0.5,
-    cache_read: 0.05,
-    cache_write: 0.625,
-    output: 3,
+    input: 0.1,
+    cache_read: 0.01,
+    cache_write: 0.125,
+    output: 0.6,
     context_over_200k: {
-      input: 1,
-      cache_read: 0.1,
-      cache_write: 1.25,
-      output: 4.5,
+      input: 0.2,
+      cache_read: 0.02,
+      cache_write: 0.25,
+      output: 0.9,
     },
   }),
-    "gpt-5.6-sol-pro-flex": flexModel("gpt-5.6-sol-pro", "gpt-5.6 sol pro FLEX", {
+  "gpt-5.6-sol-pro-flex": flexModel("gpt-5.6-sol", "gpt-5.6 sol pro FLEX", {
     input: 2.5,
     cache_read: 0.25,
     cache_write: 3.125,
@@ -72,32 +74,32 @@ const flexModels = {
       cache_write: 6.25,
       output: 22.5,
     },
-  }),
+  }, { reasoning: { mode: "pro" } }),
 
-  "gpt-5.6-terra-pro-flex": flexModel("gpt-5.6-terra-pro", "gpt-5.6 terra FLEX", {
-    input: 1.25,
-    cache_read: 0.125,
-    cache_write: 1.5625,
-    output: 7.5,
+  "gpt-5.6-terra-pro-flex": flexModel("gpt-5.6-terra", "gpt-5.6 terra pro FLEX", {
+    input: 1,
+    cache_read: 0.1,
+    cache_write: 1.25,
+    output: 6,
     context_over_200k: {
-      input: 2.5,
-      cache_read: 0.25,
-      cache_write: 3.125,
-      output: 11.25,
+      input: 2,
+      cache_read: 0.2,
+      cache_write: 2.5,
+      output: 9,
     },
-  }),
-  "gpt-5.6-luna-pro-flex": flexModel("gpt-5.6-luna-pro", "gpt-5.6 luna FLEX", {
-    input: 0.5,
-    cache_read: 0.05,
-    cache_write: 0.625,
-    output: 3,
+  }, { reasoning: { mode: "pro" } }),
+  "gpt-5.6-luna-pro-flex": flexModel("gpt-5.6-luna", "gpt-5.6 luna pro FLEX", {
+    input: 0.1,
+    cache_read: 0.01,
+    cache_write: 0.125,
+    output: 0.6,
     context_over_200k: {
-      input: 1,
-      cache_read: 0.1,
-      cache_write: 1.25,
-      output: 4.5,
+      input: 0.2,
+      cache_read: 0.02,
+      cache_write: 0.25,
+      output: 0.9,
     },
-  }),
+  }, { reasoning: { mode: "pro" } }),
   "gpt-5.5-flex": flexModel("gpt-5.5", "gpt-5.5 FLEX", {
     input: 2.5,
     cache_read: 0.25,
@@ -110,7 +112,7 @@ const flexModels = {
   }),
   "gpt-5.4-flex": flexModel("gpt-5.4", "gpt-5.4 FLEX", {
     input: 1.25,
-    cache_read: 0.125,
+    cache_read: 0.13,
     output: 7.5,
     context_over_200k: {
       input: 2.5,
