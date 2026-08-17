@@ -12,6 +12,39 @@ export function promptTokens(inputTokens: number, cacheReadTokens: number, cache
   return inputTokens + cacheReadTokens + cacheWriteTokens
 }
 
+export function processedPromptTokens(inputTokens: number, cacheWriteTokens: number) {
+  return inputTokens + cacheWriteTokens
+}
+
+export type SpeedTurn = {
+  promptTokens: number
+  generatedTokens: number
+  promptMs: number
+  generationMs: number
+  ttftMs: number
+}
+
+export function aggregateSpeeds(turns: SpeedTurn[]) {
+  const promptTurns = turns.filter((turn) => turn.promptTokens > 0 && turn.promptMs > 0)
+  const generationTurns = turns.filter((turn) => turn.generatedTokens > 0 && turn.generationMs > 0)
+  const promptMs = promptTurns.reduce((total, turn) => total + turn.promptMs, 0)
+  const generationMs = generationTurns.reduce((total, turn) => total + turn.generationMs, 0)
+
+  // baza: these are end-to-end step timings, not provider-only prefill timings.
+  // Upgrade path: use provider telemetry when OpenCode exposes it.
+  return {
+    prompt: promptMs > 0
+      ? promptTurns.reduce((total, turn) => total + turn.promptTokens, 0) / (promptMs / 1_000)
+      : undefined,
+    generation: generationMs > 0
+      ? generationTurns.reduce((total, turn) => total + turn.generatedTokens, 0) / (generationMs / 1_000)
+      : undefined,
+    ttftMs: turns.length
+      ? turns.reduce((total, turn) => total + turn.ttftMs, 0) / turns.length
+      : undefined,
+  }
+}
+
 export type TokenUsage = {
   input: number
   cached: number
@@ -43,17 +76,4 @@ export function liveTokensPerSecond(samples: TokenSample[], now: number, windowM
 
   const elapsedMs = Math.max(now - recent[0]!.at, 250)
   return recent.reduce((total, sample) => total + sample.tokens, 0) / (elapsedMs / 1_000)
-}
-
-export function finalSpeeds(promptTokens: number, outputTokens: number, createdAt: number, firstTokenAt: number, completedAt: number) {
-  const ttftMs = Math.max(0, firstTokenAt - createdAt)
-  const generationMs = Math.max(0, completedAt - firstTokenAt)
-
-  return {
-    ttftMs,
-    // baza: OpenCode has no provider prefill timing. This network-inclusive
-    // estimate should be replaced when providers expose real prefill telemetry.
-    prompt: ttftMs > 0 && promptTokens > 0 ? promptTokens / (ttftMs / 1_000) : undefined,
-    generation: generationMs > 0 && outputTokens > 0 ? outputTokens / (generationMs / 1_000) : undefined,
-  }
 }

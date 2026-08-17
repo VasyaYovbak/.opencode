@@ -19,7 +19,7 @@ function flexModel(
     id,
     name,
     cost,
-    limit: { context: 200_000, output: 32_000 },
+    limit: { context: 1_000_000, output: 32_000 },
     options: { serviceTier: "flex", ...options },
     variants: reasoningVariants,
   }

@@ -29,10 +29,10 @@ Substring or `*.wildcard` to narrow by extension/dir. No `{brace}` expansion, no
 
 ## Routing
 
-- File names → `find`/`ls`. Exact text/regex → `rg`. JSON/config/markdown → `Read`.
+- File names → `find`/`ls`. Exact text/regex → `grep`. JSON/config/markdown → `Read`.
 - Concepts/behavior/unknown symbols → `search`. Call relationships → `callers`/`callees`. File structure → `outline`. One symbol body → `unfold`.
 - Code reading: `outline` → batch all needed specific methods in one `unfold` command, not separate calls or whole classes. Check `(N lines)` spans — anything >200 lines is expensive to unfold.
-- If `search` returns nothing: rephrase with domain terms, narrow with `--file-pattern`, rebuild `index` if stale, fall back to `rg`.
+- If `search` returns nothing: rephrase with domain terms, narrow with `--file-pattern`, rebuild `index` if stale, fall back to `grep`.
 - **Batch search queries**: when you have multiple phrasings (e.g. "authorization", "auth flow", "how does auth work"), pass them all in one call: `smart-explore search "authorization" "auth flow" "how does auth work"`. Results are merged, deduplicated by chunk, and sorted by how many queries matched. Each result shows `[n/N]` match count. Saves tokens vs multiple separate calls.
 
 ## Pipes — filter output before reading

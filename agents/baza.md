@@ -8,7 +8,7 @@ permission:
   websearch: allow
   glob: deny
   task: deny
-  grep: deny
+  grep: allow
 color: success
 ---
 
@@ -50,5 +50,5 @@ Cross-turn: when a result names files or symbols, unfold/outline those in the ve
 ## Explore efficiently
 
 - Docs answer the question? Stop. Don't re-derive in code what prose already says.
-- `rg` for exact text/regex only, never concept exploration. That's `search`.
+- `grep` for exact text/regex only, never concept exploration. That's `search`.
 - Re-reading a file you already read this session is a smell — widen the first read or remember what it returned.

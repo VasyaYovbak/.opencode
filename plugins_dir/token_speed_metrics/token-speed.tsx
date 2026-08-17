@@ -1,21 +1,47 @@
 /** @jsxImportSource @opentui/solid */
 import type { RGBA, TextRenderable } from "@opentui/core"
 import type { TuiPlugin, TuiPluginModule, TuiThemeCurrent } from "@opencode-ai/plugin/tui"
+import type { Part } from "@opencode-ai/sdk/v2"
 import { onCleanup } from "solid-js"
-import { addUsage, estimateTokens, finalSpeeds, generatedTokens, liveTokensPerSecond, promptTokens, type TokenSample, type TokenUsage } from "./token-speed-metrics.js"
+import { addUsage, aggregateSpeeds, estimateTokens, generatedTokens, liveTokensPerSecond, processedPromptTokens, promptTokens, type SpeedTurn, type TokenSample, type TokenUsage } from "./token-speed-metrics.js"
 
 type Reading = {
   model?: string
-  prompt?: number
-  generation?: number
-  ttftMs?: number
   usage?: TokenUsage
 }
 
-type MessageTiming = {
-  sessionID: string
-  createdAt?: number
-  firstTokenAt?: number
+type TurnTiming = {
+  startedAt?: number
+  firstOutputAt?: number
+  completedAt?: number
+  promptTokens?: number
+  generatedTokens?: number
+}
+
+const toSpeedTurn = (turn: TurnTiming): SpeedTurn | undefined => {
+  if (turn.startedAt === undefined || turn.firstOutputAt === undefined || turn.completedAt === undefined) return undefined
+
+  return {
+    promptTokens: turn.promptTokens ?? 0,
+    generatedTokens: turn.generatedTokens ?? 0,
+    promptMs: Math.max(0, turn.firstOutputAt - turn.startedAt),
+    generationMs: Math.max(0, turn.completedAt - turn.firstOutputAt),
+    ttftMs: Math.max(0, turn.firstOutputAt - turn.startedAt),
+  }
+}
+
+const partStart = (part: Part) => {
+  if (part.type === "text") return part.time?.start
+  if (part.type === "reasoning") return part.time.start
+  if (part.type === "tool" && part.state.status !== "pending") return part.state.time.start
+  return undefined
+}
+
+const firstPartStart = (parts: Part[]) => {
+  const starts = parts
+    .map(partStart)
+    .filter((value): value is number => value !== undefined)
+  return starts.length ? Math.min(...starts) : undefined
 }
 
 const formatSpeed = (value?: number) => value === undefined ? "--" : value >= 100 ? value.toFixed(0) : value.toFixed(1)
@@ -47,6 +73,7 @@ function SpeedWidget(props: {
   api: Parameters<TuiPlugin>[0]
   sessionID: string
   readings: Map<string, Reading>
+  turns: Map<string, Map<string, TurnTiming>>
   samples: Map<string, TokenSample[]>
   subscribe: (listener: () => void) => () => void
 }) {
@@ -59,16 +86,21 @@ function SpeedWidget(props: {
 
   const sync = () => {
     const reading = props.readings.get(props.sessionID) ?? {}
+    const speedTurns = [...(props.turns.get(props.sessionID)?.values() ?? [])].flatMap((turn) => {
+      const value = toSpeedTurn(turn)
+      return value ? [value] : []
+    })
+    const aggregate = aggregateSpeeds(speedTurns)
     const live = liveTokensPerSecond(props.samples.get(props.sessionID) ?? [], Date.now())
-    const generation = live ?? reading.generation
+    const generation = live ?? aggregate.generation
 
     if (modelRef) modelRef.content = reading.model ?? "model"
-    if (promptRef) promptRef.content = formatSpeed(reading.prompt)
+    if (promptRef) promptRef.content = formatSpeed(aggregate.prompt)
     if (generationRef) {
       generationRef.content = formatSpeed(generation)
       generationRef.fg = speedColor(generation, theme)
     }
-    if (ttftRef) ttftRef.content = formatTime(reading.ttftMs)
+    if (ttftRef) ttftRef.content = formatTime(aggregate.ttftMs)
     if (usageRef) usageRef.content = formatUsage(reading.usage)
     props.api.renderer.requestRender()
   }
@@ -78,10 +110,10 @@ function SpeedWidget(props: {
 
   return (
     <box flexDirection="column">
-      <text fg={theme.text}><b>Model speed</b></text>
+      <text fg={theme.text}><b>Model speed · chat</b></text>
       <text ref={(value: TextRenderable) => { modelRef = value; sync() }} fg={theme.accent}>model</text>
       <box flexDirection="row">
-        <text fg={theme.textMuted}>Input ≈ </text>
+        <text fg={theme.textMuted}>Prompt ≈ </text>
         <text ref={(value: TextRenderable) => { promptRef = value; sync() }} fg={theme.warning}>--</text>
         <text fg={theme.textMuted}> tok/s</text>
       </box>
@@ -102,7 +134,7 @@ function SpeedWidget(props: {
 
 const tui: TuiPlugin = async (api) => {
   const readings = new Map<string, Reading>()
-  const timings = new Map<string, MessageTiming>()
+  const turns = new Map<string, Map<string, TurnTiming>>()
   const samples = new Map<string, TokenSample[]>()
   const completed = new Set<string>()
   const listeners = new Set<() => void>()
@@ -113,12 +145,131 @@ const tui: TuiPlugin = async (api) => {
     return () => listeners.delete(listener)
   }
 
+  const earliest = (left?: number, right?: number) => {
+    if (left === undefined) return right
+    if (right === undefined) return left
+    return Math.min(left, right)
+  }
+
+  const updateTurn = (sessionID: string, messageID: string, patch: Partial<TurnTiming>) => {
+    const sessionTurns = turns.get(sessionID) ?? new Map<string, TurnTiming>()
+    const current = sessionTurns.get(messageID) ?? {}
+    sessionTurns.set(messageID, {
+      startedAt: earliest(current.startedAt, patch.startedAt),
+      firstOutputAt: earliest(current.firstOutputAt, patch.firstOutputAt),
+      completedAt: earliest(current.completedAt, patch.completedAt),
+      promptTokens: patch.promptTokens ?? current.promptTokens,
+      generatedTokens: patch.generatedTokens ?? current.generatedTokens,
+    })
+    turns.set(sessionID, sessionTurns)
+  }
+
+  const usageMessageIDs = new Map<string, Set<string>>()
+  const recordUsage = (sessionID: string, messageID: string, tokens: Parameters<typeof addUsage>[1]) => {
+    const messageIDs = usageMessageIDs.get(sessionID) ?? new Set<string>()
+    if (messageIDs.has(messageID)) return
+    messageIDs.add(messageID)
+    usageMessageIDs.set(sessionID, messageIDs)
+
+    const reading = readings.get(sessionID)
+    readings.set(sessionID, { ...reading, usage: addUsage(reading?.usage, tokens) })
+  }
+
+  const usageLoaded = new Set<string>()
+  const usageLoading = new Set<string>()
+  const loadSessionUsage = async (sessionID: string) => {
+    if (usageLoaded.has(sessionID) || usageLoading.has(sessionID)) return
+    usageLoading.add(sessionID)
+
+    try {
+      // baza: load one page for the sidebar instead of paginating the whole session.
+      // Upgrade path: follow the response cursor when sessions can exceed 1,000 messages.
+      const response = await api.client.session.messages({
+        sessionID,
+        limit: 1_000,
+      })
+      for (const message of response.data ?? []) {
+        const info = message.info
+        if (info.role !== "assistant" || info.time.completed === undefined) continue
+        recordUsage(sessionID, info.id, info.tokens)
+        updateTurn(sessionID, info.id, {
+          startedAt: info.time.created,
+          firstOutputAt: firstPartStart(message.parts),
+          completedAt: info.time.completed,
+          promptTokens: processedPromptTokens(info.tokens.input, info.tokens.cache.write),
+          generatedTokens: generatedTokens(info.tokens.output, info.tokens.reasoning),
+        })
+      }
+    } catch {
+      // Live events still populate usage if the history request is unavailable.
+    } finally {
+      usageLoading.delete(sessionID)
+      usageLoaded.add(sessionID)
+      bump()
+    }
+  }
+
+  const historyLoaded = new Set<string>()
+  const historyLoading = new Set<string>()
+  const loadSessionHistory = async (sessionID: string) => {
+    if (historyLoaded.has(sessionID) || historyLoading.has(sessionID)) return
+    historyLoading.add(sessionID)
+
+    try {
+      let after: number | undefined
+      while (true) {
+        const response = await api.client.v2.session.history({
+          sessionID,
+          limit: 1_000,
+          ...(after === undefined ? {} : { after }),
+        })
+        const page = response.data
+
+        for (const event of page?.data ?? []) {
+          switch (event.type) {
+            case "session.next.step.started":
+              updateTurn(event.data.sessionID, event.data.assistantMessageID, {
+                startedAt: event.data.timestamp,
+              })
+              break
+            case "session.next.text.started":
+            case "session.next.reasoning.started":
+            case "session.next.tool.input.started":
+              // baza: history stores stream-start events, not individual token deltas.
+              // Upgrade path: use persisted delta timestamps for exact historical TTFT.
+              updateTurn(event.data.sessionID, event.data.assistantMessageID, {
+                firstOutputAt: event.data.timestamp,
+              })
+              break
+            case "session.next.step.ended":
+              recordUsage(event.data.sessionID, event.data.assistantMessageID, event.data.tokens)
+              updateTurn(event.data.sessionID, event.data.assistantMessageID, {
+                completedAt: event.data.timestamp,
+                promptTokens: processedPromptTokens(event.data.tokens.input, event.data.tokens.cache.write),
+                generatedTokens: generatedTokens(event.data.tokens.output, event.data.tokens.reasoning),
+              })
+              break
+          }
+        }
+
+        if (!page?.hasMore) break
+        const next = page.data.at(-1)?.durable?.seq
+        if (next === undefined || next === after) break
+        after = next
+      }
+    } catch {
+      // Token usage and live timings still work if durable history is unavailable.
+    } finally {
+      historyLoading.delete(sessionID)
+      historyLoaded.add(sessionID)
+      bump()
+    }
+  }
+
   const recordDelta = (sessionID: string, messageID: string, delta: string, timestamp: number | string) => {
     const parsed = typeof timestamp === "number" ? timestamp : Date.parse(timestamp)
     const now = Number.isFinite(parsed) ? parsed : Date.now()
-    const timing = timings.get(messageID) ?? { sessionID }
-    timing.firstTokenAt ??= now
-    timings.set(messageID, timing)
+    updateTurn(sessionID, messageID, { firstOutputAt: now })
 
     const current = samples.get(sessionID) ?? []
     samples.set(sessionID, [
@@ -138,24 +289,17 @@ const tui: TuiPlugin = async (api) => {
 
   api.event.on("session.next.step.started", (event) => {
     const value = event.properties
-    const timing = timings.get(value.assistantMessageID) ?? { sessionID: value.sessionID }
-    timing.createdAt = value.timestamp
-    timings.set(value.assistantMessageID, timing)
+    updateTurn(value.sessionID, value.assistantMessageID, { startedAt: value.timestamp })
   })
 
   api.event.on("session.next.step.ended", (event) => {
     const value = event.properties
-    const timing = timings.get(value.assistantMessageID)
-    if (timing?.firstTokenAt === undefined) return
-
-    const speed = finalSpeeds(
-      promptTokens(value.tokens.input, value.tokens.cache.read, value.tokens.cache.write),
-      generatedTokens(value.tokens.output, value.tokens.reasoning),
-      timing.createdAt ?? timing.firstTokenAt,
-      timing.firstTokenAt,
-      value.timestamp,
-    )
-    readings.set(value.sessionID, { ...readings.get(value.sessionID), ...speed })
+    recordUsage(value.sessionID, value.assistantMessageID, value.tokens)
+    updateTurn(value.sessionID, value.assistantMessageID, {
+      completedAt: value.timestamp,
+      promptTokens: processedPromptTokens(value.tokens.input, value.tokens.cache.write),
+      generatedTokens: generatedTokens(value.tokens.output, value.tokens.reasoning),
+    })
     bump()
   })
 
@@ -178,9 +322,6 @@ const tui: TuiPlugin = async (api) => {
     if (info.role !== "assistant") return
 
     const reading = readings.get(info.sessionID)
-    const timing = timings.get(info.id) ?? { sessionID: info.sessionID }
-    timing.createdAt = info.time.created
-    timings.set(info.id, timing)
     readings.set(info.sessionID, { ...reading, model: info.modelID })
 
     if (!info.time.completed || completed.has(info.id)) {
@@ -189,22 +330,14 @@ const tui: TuiPlugin = async (api) => {
     }
     completed.add(info.id)
 
-    const usage = addUsage(reading?.usage, info.tokens)
-    const completedReading = { ...reading, model: info.modelID, usage }
-    readings.set(info.sessionID, completedReading)
-
-    if (timing.firstTokenAt !== undefined) {
-      const speed = finalSpeeds(
-        promptTokens(info.tokens.input, info.tokens.cache.read, info.tokens.cache.write),
-        generatedTokens(info.tokens.output, info.tokens.reasoning),
-        info.time.created,
-        timing.firstTokenAt,
-        info.time.completed,
-      )
-      readings.set(info.sessionID, { ...completedReading, ...speed })
-    }
+    recordUsage(info.sessionID, info.id, info.tokens)
+    updateTurn(info.sessionID, info.id, {
+      startedAt: info.time.created,
+      completedAt: info.time.completed,
+      promptTokens: processedPromptTokens(info.tokens.input, info.tokens.cache.write),
+      generatedTokens: generatedTokens(info.tokens.output, info.tokens.reasoning),
+    })
     samples.delete(info.sessionID)
-    timings.delete(info.id)
     bump()
   })
 
@@ -224,7 +357,9 @@ const tui: TuiPlugin = async (api) => {
     order: 90,
     slots: {
       sidebar_content(_context, value) {
-        return <SpeedWidget api={api} sessionID={value.session_id} readings={readings} samples={samples} subscribe={subscribe} />
+        void loadSessionUsage(value.session_id)
+        void loadSessionHistory(value.session_id)
+        return <SpeedWidget api={api} sessionID={value.session_id} readings={readings} turns={turns} samples={samples} subscribe={subscribe} />
       },
     },
   })
