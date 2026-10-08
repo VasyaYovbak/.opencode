@@ -1,2 +1,13 @@
 #!/bin/sh
+: "${CBM_BINARY:?CBM_BINARY must be set by the OpenCode plugin}"
+if [ "${CBM_DIRECT:-0}" != "1" ] && [ -n "${CBM_SOCKET:-}" ] && [ -S "$CBM_SOCKET" ] && command -v node >/dev/null 2>&1; then
+  # Preserve native progress/verbose diagnostics for explicitly requested modes.
+  direct=0
+  for arg do
+    case "$arg" in --progress|--verbose) direct=1 ;; esac
+  done
+  if [ "$direct" = "0" ]; then
+    exec node "${0%/*}/client.mjs" "$@"
+  fi
+fi
 exec "${CBM_BINARY:?CBM_BINARY must be set by the OpenCode plugin}" cli "$@"
