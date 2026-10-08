@@ -10,7 +10,7 @@ type Entry = { ready: Promise<MCPSession>; session: MCPSession; users: number; t
 type Request = { argv: string[]; cwd: string; stdinTTY: boolean; timeout: number; env: Record<string, string | null> }
 const environmentKeys = ["CBM_BINARY", "CBM_ALLOWED_ROOT", "CBM_CACHE_DIR", "CBM_RUNTIME_DIR", "CBM_LOG_LEVEL", "CBM_MEM_BUDGET_MB"]
 
-export async function createCLIBridge(binary: string): Promise<{ socket: string; close: () => Promise<void> }> {
+export async function createCLIBridge(binary: string): Promise<{ socket: string; warm: (cwd: string) => Promise<void>; close: () => Promise<void> }> {
   const directory = await mkdtemp(join(tmpdir(), "oc-cbm-"))
   await chmod(directory, 0o700)
   const socketPath = join(directory, "s")
@@ -47,6 +47,16 @@ export async function createCLIBridge(binary: string): Promise<{ socket: string;
     entry.users++
     entry.touched = Date.now()
     return entry
+  }
+
+  async function warm(cwd: string): Promise<void> {
+    const entry = await acquire(cwd)
+    try {
+      await entry.ready
+    } finally {
+      entry.users--
+      entry.touched = Date.now()
+    }
   }
 
   const server = createServer((socket) => {
@@ -162,7 +172,7 @@ export async function createCLIBridge(binary: string): Promise<{ socket: string;
     await chmod(socketPath, 0o600)
     server.on("error", (error) => console.warn(`CBM bridge socket failed: ${error.message}`))
     process.once("exit", onExit)
-    return { socket: socketPath, close }
+    return { socket: socketPath, warm, close }
   } catch (error) {
     await close()
     throw error
