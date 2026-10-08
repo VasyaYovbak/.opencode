@@ -5,7 +5,12 @@ import { registerOpenAIFlexModels } from "./plugins/openai-flex-models/index.js"
 export default Plugin.define({
   id: "local.personal-plugin-suite",
   async setup(ctx) {
-    await initializeCodebaseMemory(ctx)
+    try {
+      await initializeCodebaseMemory(ctx)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`Codebase Memory initialization failed; continuing without CBM: ${message}`)
+    }
     await registerOpenAIFlexModels(ctx)
   },
 })

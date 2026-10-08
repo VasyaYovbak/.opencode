@@ -34,7 +34,16 @@ Alternatively, place or symlink this directory under `~/.config/opencode/plugins
 
 ## CBM settings
 
-The daemon binary defaults to `/home/vasyl/.local/bin/codebase-memory-mcp`. Set `CBM_BINARY` in the OpenCode
-server environment to use a different path. `CBM_LOG_LEVEL` is forwarded to shell sessions and defaults to `error`.
+Codebase Memory v0.11.0 is bundled for Linux x64, macOS Apple Silicon (arm64), and macOS Intel (x64).
+The plugin selects the archive using the OpenCode server's OS and architecture, verifies the archive and
+executable SHA-256 checksums, and checks the version before using a platform-specific runtime directory.
+No separate CBM installation or runtime download is needed on these platforms.
+
+Set `CBM_BINARY` in the OpenCode **server environment** to use a different executable or support another
+platform. This override bypasses the bundled checksum and version checks, so verify the executable yourself
+(`codebase-memory-mcp --version` should print `codebase-memory-mcp 0.11.0`).
+`CBM_LOG_LEVEL` is forwarded to shell sessions and defaults to `error`.
+
+If CBM initialization fails, the plugin logs the cause and still registers the OpenAI Flex models.
 
 Run `npm install` and `npm run typecheck` to install dependencies and check the plugin sources.
