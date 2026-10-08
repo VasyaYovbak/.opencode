@@ -1,6 +1,7 @@
 import { Plugin } from "@opencode/plugin"
 import { initializeCodebaseMemory } from "./plugins/codebase-memory/index.js"
 import { registerOpenAIFlexModels } from "./plugins/openai-flex-models/index.js"
+import { registerShellEnv } from "./plugins/shell-env/index.js"
 
 export default Plugin.define({
   id: "local.personal-plugin-suite",
@@ -14,6 +15,7 @@ export default Plugin.define({
     }
     try {
       await registerOpenAIFlexModels(ctx)
+      await registerShellEnv(ctx)
     } catch (error) {
       await cleanup?.()
       throw error

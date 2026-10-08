@@ -7,11 +7,26 @@ Use Codebase Memory first for symbol discovery, callers/callees, dependencies, a
 - `$CBM` is injected into every shell command as the name of a CLI-compatible client on `PATH`. It reuses a persistent MCP session, or adds `cli` internally when falling back to the native executable. Invoke it directly in bash or zsh: `$CBM search_graph ...`. Do not append another `cli`, run the binary without a subcommand, or start another MCP stdio server.
 - Tool names use underscores; flags use kebab-case: `get_code_snippet --qualified-name ...`.
 - Every project-scoped command requires `--project`. First run `$CBM list_projects`; choose the returned `name` whose `root_path` matches the checkout being investigated. Do not guess the project name from a directory basename or reuse another checkout's index.
-- In examples, `PROJECT` is that exact returned name; `REPO` is the checkout's absolute path. Set variables within each shell call or substitute literal values: assignments do not necessarily persist between tool calls.
+- In examples, `PROJECT` is that exact returned name; `REPO` is the checkout's absolute path. Shell variables from `export` do not persist between tool calls. If `shell_env_set` is available, store the project name once as `CBM_PROJECT` and reference `"$CBM_PROJECT"` in later commands. Otherwise substitute the literal name in each call.
 - Use explicit boolean values (`--include-tests true`). For array flags, repeat the flag once per item: `--paths 'src/auth.ts' --paths 'src/user.ts'`. **Do not pass a JSON array or comma-separated list as one flag value**: it becomes one literal string item. Quote regexes, paths, qualified names, and Cypher queries.
 - For complex arrays/objects, pass one raw JSON argument instead of flags, e.g. `$CBM check_index_coverage '{"project":"<selected name>","paths":["src/auth.ts","src/user.ts"]}'`, or use `--args-file PATH` with a JSON file. JSON keys use snake_case; do not mix the raw JSON argument with flag-style tool arguments.
 - Default output is compact `tree`. Use `--format json` when exact names or machine parsing are needed. This differs from `$CBM --json TOOL ...`, which returns the raw MCP envelope.
 - The reference below is a condensed `--help` snapshot, not a list of every optional flag. Start with it; request `$CBM TOOL --help` only for unlisted options or an overridden binary with a different version.
+
+## Token economy
+
+- Keep the default compact `tree` output. Use `--format json` only when you must parse exact names or QNs.
+- Start narrow: small `--limit`/`--result-limit`/`--raw-limit`, `--max-lines 80` or less on snippets, `--depth 1` or `2` on traces. Widen only if the first page is insufficient.
+- Scope every query: `--file-pattern`, `--path-filter`, `--scopes`, `--path` with `get_architecture`. Do not request `--aspects` beyond what the question needs.
+- Use `get_file_outline` before `get_code_snippet` so you read only the symbols you need, not whole files.
+- Prefer one targeted `get_code_snippet` over reading the entire source file with `Read`, unless the snippet is insufficient.
+- Use `--max-output-tokens` on large queries when the answer does not need the full output.
+
+## Parallel calls
+
+- Batch independent calls in one turn. Issue several tool calls together rather than one at a time, for example `index_status` with `check_index_coverage` and `get_file_outline`, or several `get_code_snippet` calls for different QNs.
+- Several independent `$CBM` commands may be combined in one shell call. Keep the combined output small.
+- Only sequence calls when a later call needs an exact value from an earlier result, such as a QN from `search_graph` before `get_code_snippet`.
 
 ## First use in a checkout
 
