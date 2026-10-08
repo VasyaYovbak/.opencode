@@ -1,32 +1,40 @@
-# .opencode Setup
+# OpenCode Personal Plugin Suite
 
-Run the `.opencode` install script before starting OpenCode in this repository.
+A small OpenCode V2 plugin package bundling three local features:
 
-## Install
+- **Codebase Memory (CBM):** starts the CBM daemon and exposes `CBM` to new shell sessions.
+- **OpenAI Flex models:** registers the local Flex model definitions and pricing.
+- **Token Speed Metrics:** adds token usage, prompt/generation speed, and TTFT to the TUI sidebar.
 
-macOS / Linux:
+There is no DashOps provider in this package.
 
-```bash
-sh ./.opencode/install.sh
+## Layout
+
+- `src/index.ts` is the server plugin entry point and composes the server-side feature modules.
+- `src/plugins/codebase-memory/` owns CBM daemon startup and shell environment setup.
+- `src/plugins/openai-flex-models/` owns Flex model data and provider registration.
+- `src/plugins/token-speed-metrics/` owns the TUI entry point, metrics calculations, and event state.
+- Token Speed Metrics uses the separate `@opencode/plugin/tui` API.
+- `package.json` exports both `.` and `./tui`, so OpenCode can load the server and TUI parts from this package.
+
+## Install locally
+
+Install dependencies in this directory, then add the package path to the `plugins` list in the global
+`~/.config/opencode/opencode.json`:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["/home/vasyl/repos/opencode-plugin-suite"],
+}
 ```
 
-Windows:
+The CLI loads the TUI entry point from the same package; it does not also need to be listed in `cli.json`.
+Alternatively, place or symlink this directory under `~/.config/opencode/plugins/` for global plugin discovery.
 
-```bat
-.\.opencode\install.bat
-```
+## CBM settings
 
-The install script sets up:
+The daemon binary defaults to `/home/vasyl/.local/bin/codebase-memory-mcp`. Set `CBM_BINARY` in the OpenCode
+server environment to use a different path. `CBM_LOG_LEVEL` is forwarded to shell sessions and defaults to `error`.
 
-- `.opencode/node_modules`
-- `.opencode/mcp/smart-explore/node_modules`
-
-## Notes
-
-- `smart-explore` uses a committed `scripts/mcp-server.cjs` bundle, so the install step only installs dependencies.
-- If you change files under `.opencode/mcp/smart-explore/src/`, rebuild the bundle manually:
-
-```bash
-cd .opencode/mcp/smart-explore
-npm run build
-```
+Run `npm install` and `npm run typecheck` to install dependencies and check the plugin sources.

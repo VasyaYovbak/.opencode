@@ -1,16 +1,17 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
     "types": ["node"],
-    "lib": ["ES2022"],
+    "lib": ["ESNext", "DOM"],
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid",
     "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "allowJs": false
+    "resolveJsonModule": true
   },
-  "include": ["plugins/**/*.ts", "tools/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }
