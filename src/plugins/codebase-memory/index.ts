@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises"
 import { execFile } from "node:child_process"
-import { dirname, join } from "node:path"
+import { delimiter, dirname, join } from "node:path"
 import { promisify } from "node:util"
 import { fileURLToPath } from "node:url"
 import type { Plugin } from "@opencode/plugin"
@@ -24,7 +24,10 @@ export async function initializeCodebaseMemory(ctx: Plugin.Context): Promise<voi
   })
 
   await ctx.shell.hook("create.before", (event) => {
-    event.env.CBM = `${binary} cli`
+    const path = event.env.PATH ?? process.env.PATH
+    event.env.PATH = path ? `${binDir}${delimiter}${path}` : binDir
+    event.env.CBM = "opencode-cbm"
+    event.env.CBM_BINARY = binary
     event.env.CBM_LOG_LEVEL ??= process.env.CBM_LOG_LEVEL ?? "error"
   })
 }

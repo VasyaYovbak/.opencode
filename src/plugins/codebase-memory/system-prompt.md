@@ -4,7 +4,7 @@ Use Codebase Memory first for symbol discovery, callers/callees, dependencies, a
 
 ## CLI contract (bundled upstream v0.11.0)
 
-- `$CBM` is injected into every shell command and already contains the executable **and `cli`**. Invoke it unquoted: `$CBM search_graph ...`. Do not append another `cli`, run the binary without a subcommand, or start an MCP stdio server.
+- `$CBM` is injected into every shell command as the name of a CLI wrapper on `PATH`. The wrapper adds `cli` internally. Invoke it directly in bash or zsh: `$CBM search_graph ...`. Do not append another `cli`, run the binary without a subcommand, or start an MCP stdio server.
 - Tool names use underscores; flags use kebab-case: `get_code_snippet --qualified-name ...`.
 - Every project-scoped command requires `--project`. First run `$CBM list_projects`; choose the returned `name` whose `root_path` matches the checkout being investigated. Do not guess the project name from a directory basename or reuse another checkout's index.
 - In examples, `PROJECT` is that exact returned name; `REPO` is the checkout's absolute path. Set variables within each shell call or substitute literal values: assignments do not necessarily persist between tool calls.

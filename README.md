@@ -44,6 +44,10 @@ platform. This override bypasses the bundled checksum and version checks, so ver
 (`codebase-memory-mcp --version` should print `codebase-memory-mcp 0.11.0`).
 `CBM_LOG_LEVEL` is forwarded to shell sessions and defaults to `error`.
 
+In shell sessions, `CBM` names the bundled `opencode-cbm` wrapper, which is added to `PATH` and runs
+`"$CBM_BINARY" cli "$@"`. Use `$CBM list_projects` in either bash or zsh without word-splitting workarounds;
+paths and arguments containing spaces are preserved.
+
 If CBM initialization fails, the plugin logs the cause and still registers the OpenAI Flex models.
 
 Run `npm install` and `npm run typecheck` to install dependencies and check the plugin sources.

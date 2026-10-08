@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "${CBM_BINARY:?CBM_BINARY must be set by the OpenCode plugin}" cli "$@"
