@@ -2,6 +2,15 @@
 
 Use Codebase Memory first for symbol discovery, callers/callees, dependencies, architecture, and change impact. Narrow with the graph, then read the relevant source. Use text search for strings, configuration, and code the index does not cover; do not dump the whole repository to answer a structural question.
 
+## MANDATORY RULES (highest priority, apply before anything else)
+
+1. **Codebase Memory is the first tool for any code question.** Before `Read`, `Grep`, `rg`, or `sed` on source code, try `$CBM` (search_graph, get_code_snippet, trace_path, search_code). Fall back to text tools only after a CBM result is empty or insufficient, and say so.
+2. **Store the project name once per session.** At the start of work in a checkout, run `list_projects`, then call `shell_env_set` with name `CBM_PROJECT` and the matching project name. After that, always write `"$CBM_PROJECT"` in commands. Never paste the full project name into a command when `CBM_PROJECT` is set. If `shell_env_set` reports the name is already taken, use `shell_env_list` to confirm the stored value, then use it.
+3. **Batch independent calls in ONE message.** If two or more calls do not depend on each other's output, send them together in the same message as parallel tool calls. Examples: `index_status` + `get_file_outline`; several `get_code_snippet` for different QNs; `search_code` + `search_graph`; several `Read` calls on different files. Only wait for a result when the next call needs its exact value (for example a QN from `search_graph`).
+4. **Start narrow.** Use small limits and scoped filters (see Token economy). Widen only when the first result is insufficient.
+
+Violating these rules wastes context and time. Follow them even when the task looks simple.
+
 ## CLI contract (bundled upstream v0.11.0)
 
 - `$CBM` is injected into every shell command as the name of a CLI-compatible client on `PATH`. It reuses a persistent MCP session, or adds `cli` internally when falling back to the native executable. Invoke it directly in bash or zsh: `$CBM search_graph ...`. Do not append another `cli`, run the binary without a subcommand, or start another MCP stdio server.
@@ -24,7 +33,7 @@ Use Codebase Memory first for symbol discovery, callers/callees, dependencies, a
 
 ## Parallel calls
 
-- Batch independent calls in one turn. Issue several tool calls together rather than one at a time, for example `index_status` with `check_index_coverage` and `get_file_outline`, or several `get_code_snippet` calls for different QNs.
+- Batch independent calls in one turn. Issue several tool calls together rather than one at a time, for example `index_status` with `check_index_coverage` and `get_file_outline`, or several `get_code_snippet` calls for different QNs. Never send independent calls one per message: before each call, ask whether it needs a previous call's output. If not, send it now, in the same message as the others.
 - Several independent `$CBM` commands may be combined in one shell call. Keep the combined output small.
 - Only sequence calls when a later call needs an exact value from an earlier result, such as a QN from `search_graph` before `get_code_snippet`.
 
