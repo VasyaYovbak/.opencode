@@ -25,12 +25,12 @@ async function bootstrap(binary: string, directory: string, shellEnv: ShellEnv):
     return `[Codebase Memory] No indexed project for checkout ${directory}. Do not start indexing on your own; ask the user whether to index it.`
   }
 
-  await shellEnv.set("CBM_PROJECT", project.name)
+  await shellEnv.set("P", project.name)
 
   const status = await runCBM(binary, ["index_status", "--project", project.name])
   const field = (key: string) => status.match(new RegExp(`^${key}: (.*)$`, "m"))?.[1] ?? "unknown"
   return [
-    `[Codebase Memory] Project: ${project.name}. CBM_PROJECT is already set; use "$CBM_PROJECT" in commands.`,
+    `[Codebase Memory] Project: ${project.name}. Variable $P is already set; use "$P" in commands.`,
     `Index: status ${field("status")}, nodes ${field("nodes")}, edges ${field("edges")}, indexed_at ${field("indexed_at")}.`,
   ].join("\n")
 }

@@ -4,12 +4,12 @@ Use Codebase Memory (`$CBM`) first for symbol discovery, callers/callees, depend
 
 ## MANDATORY RULES
 
-1. **CBM before grep for code.** For symbols, classes, settings, and callers, start with `$CBM search_graph --name-pattern`. Use `search_code` for strings. Use `grep`/`rg`/`read` for source code only after two CBM searches have returned nothing, and say so. Never send `grep`, `rg`, or `read` in the same message as a CBM search: wait for the CBM result first.
-2. **Project is already set.** The plugin sends a `[Codebase Memory]` message at the start of each session and sets `CBM_PROJECT`. Use `"$CBM_PROJECT"` in every command. Do not run `list_projects` or `shell_env_set` for this.
+1. **CBM before grep for code.** For symbols, classes, settings, and callers, start with `$CBM search_graph --name-pattern`. For strings, use `$CBM search_code`. Order for a text lookup: `search_graph` and `search_code` together, then `grep`/`rg`/`read` only if both returned nothing, and say so. Never send `grep`, `rg`, or `read` in the same message as a CBM search: wait for the CBM result first.
+2. **Project is already set.** The plugin sends a `[Codebase Memory]` message at the start of each session and sets the variable `P` to the project name. Use `"$P"` in every command. Never define `P=` yourself or paste the full project name into a command. Do not run `list_projects` or `shell_env_set` for this.
 3. **No indexing on your own.** If the `[Codebase Memory]` message says there is no indexed project, do not run `index_repository`. Ask the user first.
 4. **Batch independent CBM calls in one message.** Calls that do not need each other's output go out together as parallel tool calls, for example `search_graph` + `search_code`, or several `get_code_snippet` calls for different QNs. Batching applies to `$CBM` calls only; text fallbacks (`grep`, `rg`, `read`) wait for CBM results, per rule 1. Sequence only when a call needs an exact value from a previous result, such as a QN.
 5. **Start narrow.** Use small limits and scoped filters: `--limit`, `--result-limit`, `--max-lines 80` or less, `--depth 1` or `2`, `--file-pattern`, `--path-filter`, `--scopes`. Widen only when the first result is not enough. Use `get_file_outline` to find symbols before reading a file.
-6. **Alternation needs `--regex true`.** Without it, `|` is matched literally and returns 0 results.
+6. **Alternation needs `--regex true` in `search_code`.** Without it, `|` is matched literally and returns 0 results. Example: `$CBM search_code --project "$P" --regex true --pattern 'A|B'`. `search_graph --name-pattern` is already a regex and needs no flag.
 7. **Read is fine when CBM is not the right tool.** Use `Read` for config files, markdown, `.env`, files and line ranges outside the graph, and right before editing.
 
 If the backend is unavailable or the scope is not indexed, continue with `Read` and `Glob`, and say so. Do not let an index problem block ordinary work.
@@ -18,7 +18,7 @@ If the backend is unavailable or the scope is not indexed, continue with `Read` 
 
 - `$CBM` is on `PATH` in every shell command. Invoke it directly: `$CBM search_graph ...`. Do not add `cli`, run the binary alone, or start another MCP server.
 - Tool names use underscores; flags use kebab-case: `get_code_snippet --qualified-name ...`.
-- Every project-scoped command requires `--project "$CBM_PROJECT"`.
+- Every project-scoped command requires `--project "$P"`.
 - Use explicit booleans (`--include-tests true`). Repeat array flags once per item: `--paths 'a.ts' --paths 'b.ts'`. Do not pass a comma-separated list as one value.
 - For complex arrays or objects, pass one raw JSON argument (snake_case keys), or `--args-file PATH`. Do not mix it with flags.
 - Default output is compact `tree`. Use `--format json` only when you must parse exact names or QNs.
@@ -126,6 +126,21 @@ detect_changes --project <PROJECT>
   Requires valid Git commits for HEAD and the comparison ref.
 ```
 
+## Qualified names with `$P`
+
+A QN is `<project>.<dotted path>.<symbol>`. `$P` holds the `<project>` part, so you can write QNs with it directly, without pasting the project name.
+
+- File `src/config.py`, class `ToolSettings`: `"$P.src.config.ToolSettings"`
+- File `src/agent/service.py`, function `create_wms_shorts_specialist`: `"$P.src.agent.service.create_wms_shorts_specialist"`
+- Slashes become dots, the `.py` extension is dropped, and the symbol name goes last.
+
+```sh
+$CBM get_code_snippet --project "$P" --qualified-name "$P.src.config.ToolSettings" --max-lines 35
+$CBM trace_path --project "$P" --function-name "$P.src.agent.service.create_wms_shorts_specialist" --direction inbound --depth 2 --limit 30
+```
+
+Prefer the QN that `search_graph` returned. Build one with `$P` only when you already know the file path and symbol name.
+
 ## Recipes
 
 Each step depends on the previous result. Replace `<...>` with values returned earlier; never run placeholder QNs.
@@ -133,9 +148,9 @@ Each step depends on the previous result. Replace `<...>` with values returned e
 ### Find a symbol, read it, then inspect callers
 
 ```sh
-$CBM search_graph --project "$CBM_PROJECT" --name-pattern '.*[Hh]andler.*' --limit 10 --format json
-$CBM get_code_snippet --project "$CBM_PROJECT" --qualified-name '<QN from search>' --source-mode full --max-lines 100
-$CBM trace_path --project "$CBM_PROJECT" --function-name '<same QN>' --direction inbound --depth 2 --limit 30
+$CBM search_graph --project "$P" --name-pattern '.*[Hh]andler.*' --limit 10 --format json
+$CBM get_code_snippet --project "$P" --qualified-name '<QN from search>' --source-mode full --max-lines 100
+$CBM trace_path --project "$P" --function-name '<same QN>' --direction inbound --depth 2 --limit 30
 ```
 
 Use `--direction outbound` for dependencies, `both` for both sides, `--include-tests true` for test callers.
@@ -143,9 +158,9 @@ Use `--direction outbound` for dependencies, `both` for both sides, `--include-t
 ### Start from a known file
 
 ```sh
-$CBM check_index_coverage --project "$CBM_PROJECT" --paths 'src/auth.ts'
-$CBM get_file_outline --project "$CBM_PROJECT" --file-path 'src/auth.ts' --limit 30
-$CBM get_code_snippet --project "$CBM_PROJECT" --qualified-name '<QN from outline>' --max-lines 80
+$CBM check_index_coverage --project "$P" --paths 'src/auth.ts'
+$CBM get_file_outline --project "$P" --file-path 'src/auth.ts' --limit 30
+$CBM get_code_snippet --project "$P" --qualified-name '<QN from outline>' --max-lines 80
 ```
 
 If coverage is missing or the outline is empty, read the file directly.
@@ -153,8 +168,8 @@ If coverage is missing or the outline is empty, read the file directly.
 ### Find behavior when the symbol name is unknown
 
 ```sh
-$CBM search_code --project "$CBM_PROJECT" --pattern 'Authorization' --path-filter 'src' --result-limit 10 --raw-limit 5
-$CBM get_code_snippet --project "$CBM_PROJECT" --qualified-name '<QN from text search>' --max-lines 80
+$CBM search_code --project "$P" --pattern 'Authorization' --path-filter 'src' --result-limit 10 --raw-limit 5
+$CBM get_code_snippet --project "$P" --qualified-name '<QN from text search>' --max-lines 80
 ```
 
 If a hit is not tied to an indexed symbol, use `Read` at its file and line instead of inventing a QN.
@@ -162,8 +177,8 @@ If a hit is not tied to an indexed symbol, use `Read` at its file and line inste
 ### Assess a patch's impact
 
 ```sh
-$CBM detect_changes --project "$CBM_PROJECT" --scope impact --base-branch '<actual base branch>' --depth 2 --limit 30
-$CBM trace_path --project "$CBM_PROJECT" --function-name '<changed symbol QN>' --direction inbound --depth 2 --include-tests true --limit 30
+$CBM detect_changes --project "$P" --scope impact --base-branch '<actual base branch>' --depth 2 --limit 30
+$CBM trace_path --project "$P" --function-name '<changed symbol QN>' --direction inbound --depth 2 --include-tests true --limit 30
 ```
 
 Read affected callers and existing tests before choosing what to change or test. Follow returned cursors if a section is incomplete.
@@ -173,7 +188,7 @@ Read affected callers and existing tests before choosing what to change or test.
 After `get_graph_schema` confirms the labels, properties, and edge types:
 
 ```sh
-$CBM query_graph --project "$CBM_PROJECT" --query 'MATCH (caller:Function)-[:CALLS]->(f:Function) RETURN f.qualified_name, count(caller) AS callers ORDER BY callers DESC LIMIT 20'
+$CBM query_graph --project "$P" --query 'MATCH (caller:Function)-[:CALLS]->(f:Function) RETURN f.qualified_name, count(caller) AS callers ORDER BY callers DESC LIMIT 20'
 ```
 
 For cross-service traversal use `trace_path --mode cross_service --direction both`; outbound-only traversal misses remote callers. Disconnected non-entry-point nodes (`search_graph --max-degree 0 --exclude-entry-points true`) are **dead-code candidates**, not proof that deletion is safe.
