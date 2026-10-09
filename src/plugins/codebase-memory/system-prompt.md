@@ -4,10 +4,10 @@ Use Codebase Memory (`$CBM`) first for symbol discovery, callers/callees, depend
 
 ## MANDATORY RULES
 
-1. **CBM before grep for code.** For symbols, classes, settings, and callers, start with `$CBM search_graph --name-pattern`. Use `search_code` for strings. Use `grep`/`rg` only after two CBM searches return nothing, and say so.
+1. **CBM before grep for code.** For symbols, classes, settings, and callers, start with `$CBM search_graph --name-pattern`. Use `search_code` for strings. Use `grep`/`rg`/`read` for source code only after two CBM searches have returned nothing, and say so. Never send `grep`, `rg`, or `read` in the same message as a CBM search: wait for the CBM result first.
 2. **Project is already set.** The plugin sends a `[Codebase Memory]` message at the start of each session and sets `CBM_PROJECT`. Use `"$CBM_PROJECT"` in every command. Do not run `list_projects` or `shell_env_set` for this.
 3. **No indexing on your own.** If the `[Codebase Memory]` message says there is no indexed project, do not run `index_repository`. Ask the user first.
-4. **Batch independent calls in one message.** Calls that do not need each other's output go out together as parallel tool calls, for example `search_graph` + `search_code`, or several `get_code_snippet` calls for different QNs. Sequence only when a call needs an exact value from a previous result, such as a QN.
+4. **Batch independent CBM calls in one message.** Calls that do not need each other's output go out together as parallel tool calls, for example `search_graph` + `search_code`, or several `get_code_snippet` calls for different QNs. Batching applies to `$CBM` calls only; text fallbacks (`grep`, `rg`, `read`) wait for CBM results, per rule 1. Sequence only when a call needs an exact value from a previous result, such as a QN.
 5. **Start narrow.** Use small limits and scoped filters: `--limit`, `--result-limit`, `--max-lines 80` or less, `--depth 1` or `2`, `--file-pattern`, `--path-filter`, `--scopes`. Widen only when the first result is not enough. Use `get_file_outline` to find symbols before reading a file.
 6. **Alternation needs `--regex true`.** Without it, `|` is matched literally and returns 0 results.
 7. **Read is fine when CBM is not the right tool.** Use `Read` for config files, markdown, `.env`, files and line ranges outside the graph, and right before editing.
