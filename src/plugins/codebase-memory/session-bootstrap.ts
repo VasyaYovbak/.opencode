@@ -10,7 +10,7 @@ type Project = { name: string; root_path: string }
 
 async function runCBM(binary: string, socket: string | undefined, args: string[], cwd: string): Promise<string> {
   if (socket) {
-    const result = await callBridge(socket, binary, ["cli", ...args], cwd).catch(() => undefined)
+    const result = await callBridge(socket, binary, args, cwd).catch(() => undefined)
     if (result) {
       if (result.exitCode !== 0) throw new Error(result.stderr || `CBM exited with ${result.exitCode}`)
       return result.stdout
