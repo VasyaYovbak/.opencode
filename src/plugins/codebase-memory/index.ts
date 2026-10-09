@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url"
 import type { Plugin } from "@opencode/plugin"
 import { ensureBundledBinary } from "./binary.js"
 import { createCLIBridge } from "./bridge.js"
+import { registerSessionBootstrap } from "./session-bootstrap.js"
+import type { ShellEnv } from "../shell-env/index.js"
 
 const execFileAsync = promisify(execFile)
 const pluginDir = dirname(fileURLToPath(import.meta.url))
@@ -31,7 +33,7 @@ async function stopStaleDaemons(binary: string): Promise<void> {
   }
 }
 
-export async function initializeCodebaseMemory(ctx: Plugin.Context): Promise<() => Promise<void>> {
+export async function initializeCodebaseMemory(ctx: Plugin.Context, shellEnv: ShellEnv): Promise<() => Promise<void>> {
   const binary = process.env.CBM_BINARY || await ensureBundledBinary(binDir)
   const systemPrompt = await readFile(join(pluginDir, "system-prompt.md"), "utf8")
   const bridge = process.env.CBM_BRIDGE === "0" ? undefined : await createCLIBridge(binary).catch((error: unknown) => {
@@ -60,6 +62,8 @@ export async function initializeCodebaseMemory(ctx: Plugin.Context): Promise<() 
       else delete event.env.CBM_SOCKET
       event.env.CBM_LOG_LEVEL ??= process.env.CBM_LOG_LEVEL ?? "error"
     })
+
+    await registerSessionBootstrap(ctx, binary, shellEnv)
 
     void bridge?.warm(ctx.location.directory || process.cwd()).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error)

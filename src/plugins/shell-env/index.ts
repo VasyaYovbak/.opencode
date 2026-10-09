@@ -3,7 +3,11 @@ import type { Plugin } from "@opencode/plugin"
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
 const PREFIX = "env/"
 
-export async function registerShellEnv(ctx: Plugin.Context): Promise<void> {
+export type ShellEnv = {
+  set(name: string, value: string): Promise<void>
+}
+
+export async function registerShellEnv(ctx: Plugin.Context): Promise<ShellEnv> {
   const values = new Map<string, string>()
 
   let after: string | undefined
@@ -18,6 +22,13 @@ export async function registerShellEnv(ctx: Plugin.Context): Promise<void> {
   await ctx.shell.hook("create.before", (event) => {
     for (const [name, value] of values) event.env[name] = value
   })
+
+  const shellEnv: ShellEnv = {
+    async set(name, value) {
+      await ctx.storage.set(PREFIX + name, value)
+      values.set(name, value)
+    },
+  }
 
   await ctx.tool.transform((editor) => {
     editor.add({
@@ -71,4 +82,6 @@ export async function registerShellEnv(ctx: Plugin.Context): Promise<void> {
       },
     })
   })
+
+  return shellEnv
 }
