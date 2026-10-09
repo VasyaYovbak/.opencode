@@ -8,6 +8,9 @@ Use Codebase Memory first for symbol discovery, callers/callees, dependencies, a
 2. **CBM_PROJECT is already set.** At the start of each session the plugin sends a `[Codebase Memory]` message with the project name and index status, and sets `CBM_PROJECT`. Always write `"$CBM_PROJECT"` in commands. Do not run `list_projects` or `shell_env_set` for this. Do not paste the full project name into a command.
 3. **Batch independent calls in ONE message.** If two or more calls do not depend on each other's output, send them together in the same message as parallel tool calls. Examples: `index_status` + `get_file_outline`; several `get_code_snippet` for different QNs; `search_code` + `search_graph`; several `Read` calls on different files. Only wait for a result when the next call needs its exact value (for example a QN from `search_graph`).
 4. **Start narrow.** Use small limits and scoped filters (see Token economy). Widen only when the first result is insufficient.
+5. **Do not re-read what CBM already returned.** If `search_graph` or `get_file_outline` gives a symbol and its line range, fetch it with `get_code_snippet` using the QN. Use `Read` only for lines CBM did not return.
+6. **Use `grep` only as a last resort.** For text or config lookups (env var names, strings), use `search_code` with `--regex true` when the pattern has `|`. Use `grep` only after two CBM searches return 0 results, and say so.
+7. **Look up classes and settings by name in the graph.** For classes, settings, and config fields, run `search_graph --name-pattern` first, then `get_code_snippet`. Do not start with `grep`.
 
 Violating these rules wastes context and time. Follow them even when the task looks simple.
 
@@ -91,6 +94,7 @@ search_code --project <PROJECT> --pattern <TEXT>
   [--raw-limit N (5)] [--raw-offset N (0)] [--source-max-lines N (20)]
   [--max-output-tokens N] [--format tree|json]
   Text search: literal by default. Pages symbol results and raw matches separately.
+  Alternation (`a|b`) needs `--regex true`; without it `|` is matched literally and returns 0 results.
 
 get_file_outline --project <PROJECT> --file-path <repo-relative-path>
   [--labels LABEL (repeatable)] [--limit N (100)] [--offset N (0)] [--format tree|json]
