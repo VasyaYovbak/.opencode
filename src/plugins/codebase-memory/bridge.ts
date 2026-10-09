@@ -1,6 +1,6 @@
 import { chmod, mkdtemp, realpath, rm } from "node:fs/promises"
 import { rmSync } from "node:fs"
-import { createServer, type Socket } from "node:net"
+import { connect, createServer, type Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { isAbsolute, join } from "node:path"
 import { runCLI, type CLIOutput } from "./cli.js"
@@ -164,6 +164,7 @@ export async function createCLIBridge(binary: string): Promise<{ socket: string;
 
   try {
     // Darwin's sockaddr_un path limit is 104 bytes including the terminator.
+
     if (Buffer.byteLength(socketPath) >= 104) throw new Error("Temporary directory path is too long for a CBM Unix socket")
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject)
@@ -177,4 +178,32 @@ export async function createCLIBridge(binary: string): Promise<{ socket: string;
     await close()
     throw error
   }
+}
+
+export function callBridge(socket: string, binary: string, argv: string[], cwd: string, timeout = 60_000): Promise<CLIOutput | undefined> {
+  const env: NodeJS.ProcessEnv = { ...process.env, CBM_LOG_LEVEL: process.env.CBM_LOG_LEVEL ?? "error" }
+  const request = {
+    argv,
+    cwd,
+    stdinTTY: true,
+    timeout,
+    env: Object.fromEntries(environmentKeys.map((key) => [key, key === "CBM_BINARY" ? binary : env[key] ?? null])),
+  }
+  return new Promise((resolve, reject) => {
+    const client = connect(socket)
+    let buffer = ""
+    client.setEncoding("utf8")
+    client.setTimeout(timeout + 30_000, () => client.destroy(new Error("CBM bridge timed out")))
+    client.on("connect", () => client.write(JSON.stringify(request) + "\n"))
+    client.on("data", (chunk: string) => {
+      buffer += chunk
+      const newline = buffer.indexOf("\n")
+      if (newline < 0) return
+      const message = JSON.parse(buffer.slice(0, newline)) as CLIOutput & { type: string }
+      client.destroy()
+      resolve(message.type === "native" ? undefined : message)
+    })
+    client.on("error", reject)
+    client.on("close", () => reject(new Error("CBM bridge closed without a result")))
+  })
 }

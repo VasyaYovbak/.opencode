@@ -63,7 +63,7 @@ export async function initializeCodebaseMemory(ctx: Plugin.Context, shellEnv: Sh
       event.env.CBM_LOG_LEVEL ??= process.env.CBM_LOG_LEVEL ?? "error"
     })
 
-    await registerSessionBootstrap(ctx, binary, shellEnv)
+    await registerSessionBootstrap(ctx, binary, bridge?.socket, shellEnv)
 
     void bridge?.warm(ctx.location.directory || process.cwd()).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error)
