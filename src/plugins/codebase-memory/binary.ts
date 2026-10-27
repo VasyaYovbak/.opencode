@@ -76,7 +76,7 @@ export async function verifyBinaryVersion(path: string): Promise<void> {
 
   let version: string
   try {
-    const { stdout } = await execFileAsync(path, ["--version"], { timeout: 15_000 })
+    const { stdout } = await execFileAsync(path, ["--version"], { timeout: 15_000, windowsHide: true })
     version = stdout.trim()
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
@@ -107,6 +107,7 @@ export async function ensureBundledBinary(binDir: string): Promise<string> {
   const { stdout: listing } = await execFileAsync("tar", [release.windows ? "-tf" : "-tzf", archivePath], {
     maxBuffer: 64 * 1024,
     timeout: 30_000,
+    windowsHide: true,
   })
   const members = listing.trimEnd().split(/\r?\n/)
   const expectedMembers = release.windows
@@ -123,6 +124,7 @@ export async function ensureBundledBinary(binDir: string): Promise<string> {
     await execFileAsync("tar", [release.windows ? "-xf" : "-xzf", archivePath, "-C", stagingDir, binaryName], {
       maxBuffer: 64 * 1024,
       timeout: 60_000,
+      windowsHide: true,
     })
 
     const candidate = join(stagingDir, binaryName)

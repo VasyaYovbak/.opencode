@@ -34,6 +34,7 @@ export class MCPSession {
       cwd,
       env: { ...env, CBM_LOG_LEVEL: env.CBM_LOG_LEVEL ?? "error" },
       stdio: "pipe",
+      windowsHide: true,
     })
     this.child.stdout.setEncoding("utf8")
     this.child.stderr.setEncoding("utf8")

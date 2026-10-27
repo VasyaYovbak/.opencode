@@ -17,7 +17,7 @@ async function runCBM(binary: string, socket: string | undefined, args: string[]
       return result.stdout
     }
   }
-  const { stdout } = await execFileAsync(binary, ["cli", ...args], { cwd, timeout: 60_000 })
+  const { stdout } = await execFileAsync(binary, ["cli", ...args], { cwd, timeout: 60_000, windowsHide: true })
   return stdout
 }
 

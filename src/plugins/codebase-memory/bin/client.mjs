@@ -18,7 +18,7 @@ let nativeChild
 function runNative() {
   completed = true
   socket.destroy()
-  nativeChild = spawn(process.env.CBM_BINARY, ["cli", ...argv], { stdio: "inherit" })
+  nativeChild = spawn(process.env.CBM_BINARY, ["cli", ...argv], { stdio: "inherit", windowsHide: true })
   nativeChild.on("error", (error) => { console.error(error.message); process.exitCode = 1 })
   nativeChild.on("exit", (code) => { process.exitCode = code ?? 1 })
 }

@@ -15,7 +15,7 @@ const binDir = join(pluginDir, "bin")
 
 async function stopStaleDaemons(binary: string): Promise<void> {
   if (process.platform === "win32") return
-  const output = await execFileAsync("ps", ["-axo", "pid=,command="]).then((result) => result.stdout).catch(() => "")
+  const output = await execFileAsync("ps", ["-axo", "pid=,command="], { windowsHide: true }).then((result) => result.stdout).catch(() => "")
   const stale = output.split("\n").flatMap((line) => {
     const match = /^\s*(\d+)\s+(.*)$/.exec(line)
     if (!match || !match[2].includes("--cbm-daemon-internal") || match[2].startsWith(binary)) return []
@@ -49,7 +49,7 @@ export async function initializeCodebaseMemory(ctx: Plugin.Context, shellEnv: Sh
     })
 
     await stopStaleDaemons(binary)
-    await execFileAsync(binary, ["daemon", "start"], { timeout: 30_000 }).catch((error: unknown) => {
+    await execFileAsync(binary, ["daemon", "start"], { timeout: 30_000, windowsHide: true }).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error)
       console.warn(`Codebase Memory daemon startup failed: ${message}`)
     })

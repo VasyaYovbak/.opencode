@@ -22,6 +22,31 @@ async function loadModule(path) {
 const { bundledReleases, getBundledRelease, ensureBundledBinary } = await loadModule("src/plugins/codebase-memory/binary.ts")
 const { normalizeProjectPath } = await loadModule("src/plugins/codebase-memory/paths.ts")
 
+test("plugin child processes request hidden Windows windows", async () => {
+  const files = [
+    "binary.ts", "index.ts", "session-bootstrap.ts", "mcp-session.ts", "bin/client.mjs",
+  ]
+  let calls = 0
+  for (const file of files) {
+    const path = join("src/plugins/codebase-memory", file)
+    const source = ts.createSourceFile(path, await readFile(path, "utf8"), ts.ScriptTarget.Latest, true)
+    function visit(node) {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) &&
+          ["spawn", "execFile", "execFileAsync"].includes(node.expression.text)) {
+        calls++
+        const options = node.arguments[2]
+        assert.ok(options && ts.isObjectLiteralExpression(options), `${path} process options`)
+        assert.ok(options.properties.some((property) => ts.isPropertyAssignment(property) &&
+          property.name.getText(source) === "windowsHide" && property.initializer.kind === ts.SyntaxKind.TrueKeyword),
+        `${path} must set windowsHide: true`)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(source)
+  }
+  assert.ok(calls > 0, "No child-process calls found")
+})
+
 test("all bundled SHA-256 values have a valid format", () => {
   for (const [platform, release] of Object.entries(bundledReleases)) {
     for (const key of ["archiveSha256", "binarySha256"]) {
