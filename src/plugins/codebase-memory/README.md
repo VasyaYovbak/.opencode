@@ -13,3 +13,9 @@ limit. On first plugin startup, only the executable is extracted into the
 Git-ignored `bin/.runtime-v0.11.0/` directory after archive/member/hash checks.
 The bundled `install.sh` is never run. `CBM_BINARY` can override the extracted
 executable path.
+
+Windows x64 and arm64 archives are bundled from the same release. Their archive
+SHA-256 values are respectively `6eb6beaf261b19e419766e78baf93cbc3cf1c6338cff8fb7c0234859f96d1685`
+and `52b29881214fce47d529e098308b1de77c40f6812e20a34d588ee4c25b84fd1a`.
+The Windows executables are extracted with the system `tar.exe`; `install.ps1`
+is never run. Windows uses the native CLI instead of the Unix-socket bridge.

@@ -8,7 +8,8 @@
     "./tui": "./src/plugins/token-speed-metrics/index.tsx"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/codebase-memory.test.mjs"
   },
   "dependencies": {
     "@opencode/plugin": "^2.0.26",

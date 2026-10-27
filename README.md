@@ -34,7 +34,8 @@ Alternatively, place or symlink this directory under `~/.config/opencode/plugins
 
 ## CBM settings
 
-Codebase Memory v0.11.0 is bundled for Linux x64, macOS Apple Silicon (arm64), and macOS Intel (x64).
+Codebase Memory v0.11.0 is bundled for Linux x64, macOS Apple Silicon (arm64), macOS Intel (x64),
+and Windows x64 and arm64. Windows requires the built-in `tar.exe` (Windows 10 1803 or later).
 The plugin selects the archive using the OpenCode server's OS and architecture, verifies the archive and
 executable SHA-256 checksums, and checks the version before using a platform-specific runtime directory.
 No separate CBM installation or runtime download is needed on these platforms.
@@ -46,6 +47,8 @@ platform. This override bypasses the bundled checksum and version checks, so ver
 
 In shell sessions, `CBM` names the bundled `opencode-cbm` wrapper on `PATH`. Use `$CBM list_projects`
 in either bash or zsh without word-splitting workarounds; paths and arguments containing spaces are preserved.
+On Windows, use `$CBM` in Git Bash, `& $env:CBM` in PowerShell, or `%CBM%` in cmd.exe.
+The Windows wrapper uses the native CLI directly; the persistent bridge is only enabled on Unix.
 
 ### Persistent CLI bridge
 
@@ -75,4 +78,4 @@ The socket and frontends are cleaned up when the plugin unloads. The underlying 
 
 If CBM initialization fails, the plugin logs the cause and still registers the OpenAI Flex models.
 
-Run `npm install` and `npm run typecheck` to install dependencies and check the plugin sources.
+Run `npm install`, `npm run typecheck`, and `npm test` to install dependencies and check the plugin.

@@ -14,6 +14,7 @@ const pluginDir = dirname(fileURLToPath(import.meta.url))
 const binDir = join(pluginDir, "bin")
 
 async function stopStaleDaemons(binary: string): Promise<void> {
+  if (process.platform === "win32") return
   const output = await execFileAsync("ps", ["-axo", "pid=,command="]).then((result) => result.stdout).catch(() => "")
   const stale = output.split("\n").flatMap((line) => {
     const match = /^\s*(\d+)\s+(.*)$/.exec(line)
@@ -36,7 +37,7 @@ async function stopStaleDaemons(binary: string): Promise<void> {
 export async function initializeCodebaseMemory(ctx: Plugin.Context, shellEnv: ShellEnv): Promise<() => Promise<void>> {
   const binary = process.env.CBM_BINARY || await ensureBundledBinary(binDir)
   const systemPrompt = await readFile(join(pluginDir, "system-prompt.md"), "utf8")
-  const bridge = process.env.CBM_BRIDGE === "0" ? undefined : await createCLIBridge(binary).catch((error: unknown) => {
+  const bridge = process.platform === "win32" || process.env.CBM_BRIDGE === "0" ? undefined : await createCLIBridge(binary).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error)
     console.warn(`Codebase Memory CLI bridge unavailable; using native CLI: ${message}`)
     return undefined
@@ -54,7 +55,11 @@ export async function initializeCodebaseMemory(ctx: Plugin.Context, shellEnv: Sh
     })
 
     await ctx.shell.hook("create.before", (event) => {
-      const path = event.env.PATH ?? process.env.PATH
+      const pathKey = process.platform === "win32"
+        ? Object.keys(event.env).find((key) => key.toUpperCase() === "PATH")
+        : "PATH"
+      const path = (pathKey ? event.env[pathKey] : undefined) ?? process.env.PATH
+      if (pathKey && pathKey !== "PATH") delete event.env[pathKey]
       event.env.PATH = path ? `${binDir}${delimiter}${path}` : binDir
       event.env.CBM = "opencode-cbm"
       event.env.CBM_BINARY = binary

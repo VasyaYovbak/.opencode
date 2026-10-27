@@ -3,6 +3,7 @@ import { promisify } from "node:util"
 import type { Plugin } from "@opencode/plugin"
 import type { ShellEnv } from "../shell-env/index.js"
 import { callBridge } from "./bridge.js"
+import { normalizeProjectPath } from "./paths.js"
 
 const execFileAsync = promisify(execFile)
 
@@ -16,19 +17,15 @@ async function runCBM(binary: string, socket: string | undefined, args: string[]
       return result.stdout
     }
   }
-  const { stdout } = await execFileAsync(binary, ["cli", ...args], { timeout: 60_000 })
+  const { stdout } = await execFileAsync(binary, ["cli", ...args], { cwd, timeout: 60_000 })
   return stdout
-}
-
-function normalize(path: string): string {
-  return path.length > 1 ? path.replace(/\/+$/, "") : path
 }
 
 async function bootstrap(binary: string, socket: string | undefined, directory: string, shellEnv: ShellEnv): Promise<string> {
   const { projects } = JSON.parse(await runCBM(binary, socket, ["list_projects", "--format", "json"], directory)) as {
     projects: Project[]
   }
-  const project = projects.find((item) => normalize(item.root_path) === normalize(directory))
+  const project = projects.find((item) => normalizeProjectPath(item.root_path) === normalizeProjectPath(directory))
   if (!project) {
     return `[Codebase Memory] No indexed project for checkout ${directory}. Do not start indexing on your own; ask the user whether to index it.`
   }

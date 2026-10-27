@@ -10,4 +10,10 @@ if [ "${CBM_DIRECT:-0}" != "1" ] && [ -n "${CBM_SOCKET:-}" ] && [ -S "$CBM_SOCKE
     exec node "${0%/*}/client.mjs" "$@"
   fi
 fi
-exec "${CBM_BINARY:?CBM_BINARY must be set by the OpenCode plugin}" cli "$@"
+binary=$CBM_BINARY
+case "$binary" in
+  [A-Za-z]:\\*)
+    if command -v cygpath >/dev/null 2>&1; then binary=$(cygpath -u "$binary"); fi
+    ;;
+esac
+exec "$binary" cli "$@"

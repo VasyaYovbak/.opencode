@@ -18,6 +18,7 @@ type BundledRelease = {
   archive: string
   archiveSha256: string
   binarySha256: string
+  windows?: boolean
 }
 
 const bundledReleases: Partial<Record<string, BundledRelease>> = {
@@ -35,6 +36,18 @@ const bundledReleases: Partial<Record<string, BundledRelease>> = {
     archive: "codebase-memory-mcp-darwin-amd64-v0.11.0.tar.gz",
     archiveSha256: "dbf1c73bfcbde64e7dde4cd1320da7afc02e2c972ee1789ae039521411f5132e",
     binarySha256: "69ca71b4b62fe233677851bdf54953e2a6660cf5d687b4d64226b2591b14ed39",
+  },
+  "win32-x64": {
+    archive: "codebase-memory-mcp-windows-amd64-v0.11.0.zip",
+    archiveSha256: "6eb6beaf261b19e419766e78baf93cbc3cf1c6338cff8fb7c0234859f96d1685",
+    binarySha256: "7edcd3807ebcfd85ec1968985964080f2589748da2fc3cce9261eebab31ff04",
+    windows: true,
+  },
+  "win32-arm64": {
+    archive: "codebase-memory-mcp-windows-arm64-v0.11.0.zip",
+    archiveSha256: "52b29881214fce47d529e098308b1de77c40f6812e20a34d588ee4c25b84fd1a",
+    binarySha256: "5615aa31e3cdbe6155e7096c43d07e62e335fe34d28e489b4cc3ce113e81b4e6",
+    windows: true,
   },
 }
 
@@ -81,7 +94,8 @@ export async function ensureBundledBinary(binDir: string): Promise<string> {
   const release = getBundledRelease()
   const archivePath = join(binDir, release.archive)
   const runtimeDir = join(binDir, `.runtime-v0.11.0-${process.platform}-${process.arch}`)
-  const defaultBinary = join(runtimeDir, "codebase-memory-mcp")
+  const binaryName = release.windows ? "codebase-memory-mcp.exe" : "codebase-memory-mcp"
+  const defaultBinary = join(runtimeDir, binaryName)
   const validRuntime = await verifyBinaryVersion(defaultBinary).then(() => true, () => false)
   if (validRuntime) return defaultBinary
 
@@ -90,25 +104,28 @@ export async function ensureBundledBinary(binDir: string): Promise<string> {
     throw new Error(`Codebase Memory release archive checksum mismatch (${release.archive}): ${archiveSha256}`)
   }
 
-  const { stdout: listing } = await execFileAsync("tar", ["-tzf", archivePath], {
+  const { stdout: listing } = await execFileAsync("tar", [release.windows ? "-tf" : "-tzf", archivePath], {
     maxBuffer: 64 * 1024,
     timeout: 30_000,
   })
   const members = listing.trimEnd().split(/\r?\n/)
-  if (members.length !== expectedArchiveMembers.length ||
-      expectedArchiveMembers.some((member) => !members.includes(member))) {
+  const expectedMembers = release.windows
+    ? [binaryName, "LICENSE", "install.ps1", "THIRD_PARTY_NOTICES.md"]
+    : expectedArchiveMembers
+  if (members.length !== expectedMembers.length ||
+      expectedMembers.some((member) => !members.includes(member))) {
     throw new Error("Codebase Memory release archive has an unexpected file list")
   }
 
   const stagingDir = await mkdtemp(join(binDir, ".extract-"))
   try {
     await chmod(stagingDir, 0o700)
-    await execFileAsync("tar", ["-xzf", archivePath, "-C", stagingDir, "codebase-memory-mcp"], {
+    await execFileAsync("tar", [release.windows ? "-xf" : "-xzf", archivePath, "-C", stagingDir, binaryName], {
       maxBuffer: 64 * 1024,
       timeout: 60_000,
     })
 
-    const candidate = join(stagingDir, "codebase-memory-mcp")
+    const candidate = join(stagingDir, binaryName)
     const candidateStatus = await lstat(candidate)
     if (!candidateStatus.isFile() || candidateStatus.isSymbolicLink()) {
       throw new Error("Extracted Codebase Memory executable is not a regular file")

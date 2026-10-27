@@ -1,5 +1,7 @@
 # Codebase Memory — graph-first code exploration
 
+On Windows, the examples below use Git Bash. In PowerShell, invoke commands as `& $env:CBM ...` and use `$env:P` instead of `$P`; in cmd.exe use `%CBM%` and `%P%`.
+
 Use Codebase Memory (`$CBM`) first for symbol discovery, callers/callees, dependencies, and change impact. Use text search or `Read` for strings, configuration, non-code files, and code the index does not cover.
 
 ## MANDATORY RULES
