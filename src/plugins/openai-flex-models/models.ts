@@ -64,6 +64,37 @@ export const flexModels = {
     variants: reasoningVariants.filter((variant) => variant.id !== "none"),
   },
 
+  "gpt-6.1-terra-flex": flexModel("gpt-6.1-terra", "gpt-6.1 Terra Flex", {
+    input: 0.5,
+    cache_read: 0.025,
+    cache_write: 0.625,
+    output: 2.5,
+    context_over_200k: {
+      input: 1,
+      cache_read: 0.05,
+      cache_write: 1.25,
+      output: 3.75,
+    },
+  }),
+
+  "gpt-6.1-terra-pro-flex": {
+    ...flexModel("gpt-6.1-terra", "gpt-6.1 Terra Flex", {
+      input: 0.5,
+      cache_read: 0.025,
+      cache_write: 0.625,
+      output: 2.5,
+      context_over_200k: {
+        input: 1,
+        cache_read: 0.05,
+        cache_write: 1.25,
+        output: 3.75,
+      },
+    }, { contextThreshold: 272_000, reasoning: { mode: "pro" } }),
+    limit: { context: 1_050_000, input: 922_000, output: 128_000 },
+    variants: reasoningVariants.filter((variant) => variant.id !== "none"),
+  },
+
+
   "gpt-6.1-sol-pro-flex": {
     ...flexModel("gpt-6.1-sol", "gpt-6.1 sol pro FLEX", {
       input: 1,
