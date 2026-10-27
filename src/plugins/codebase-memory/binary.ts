@@ -21,7 +21,7 @@ type BundledRelease = {
   windows?: boolean
 }
 
-const bundledReleases: Partial<Record<string, BundledRelease>> = {
+export const bundledReleases: Readonly<Partial<Record<string, BundledRelease>>> = {
   "linux-x64": {
     archive: "codebase-memory-mcp-linux-amd64-portable-v0.11.0.tar.gz",
     archiveSha256: "1f9e8293eb2bc5c05cfa27a7e8fc033da6d729ffad525ccfcdaa3fd606306683",
@@ -40,7 +40,7 @@ const bundledReleases: Partial<Record<string, BundledRelease>> = {
   "win32-x64": {
     archive: "codebase-memory-mcp-windows-amd64-v0.11.0.zip",
     archiveSha256: "6eb6beaf261b19e419766e78baf93cbc3cf1c6338cff8fb7c0234859f96d1685",
-    binarySha256: "7edcd3807ebcfd85ec1968985964080f2589748da2fc3cce9261eebab31ff04",
+    binarySha256: "7edcd3807ebcfd85ec1968985964080f2589748da2fc3c7ce9261eebab31ff04",
     windows: true,
   },
   "win32-arm64": {

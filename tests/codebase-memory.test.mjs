@@ -8,6 +8,7 @@ import { delimiter, join, resolve } from "node:path"
 import { test } from "node:test"
 import { promisify } from "node:util"
 import ts from "typescript"
+import yauzl from "yauzl"
 
 const execFileAsync = promisify(execFile)
 const binDir = resolve("src/plugins/codebase-memory/bin")
@@ -18,8 +19,44 @@ async function loadModule(path) {
   return import(`data:text/javascript;base64,${Buffer.from(js).toString("base64")}`)
 }
 
-const { getBundledRelease, ensureBundledBinary } = await loadModule("src/plugins/codebase-memory/binary.ts")
+const { bundledReleases, getBundledRelease, ensureBundledBinary } = await loadModule("src/plugins/codebase-memory/binary.ts")
 const { normalizeProjectPath } = await loadModule("src/plugins/codebase-memory/paths.ts")
+
+test("all bundled SHA-256 values have a valid format", () => {
+  for (const [platform, release] of Object.entries(bundledReleases)) {
+    for (const key of ["archiveSha256", "binarySha256"]) {
+      assert.match(release[key], /^[0-9a-f]{64}$/, `${platform} ${key}`)
+    }
+  }
+})
+
+test("Windows x64 executable matches its checksum", { timeout: 180_000 }, async () => {
+  const release = getBundledRelease("win32", "x64")
+  const digest = await new Promise((resolve, reject) => {
+    yauzl.open(join(binDir, release.archive), { lazyEntries: true }, (error, zip) => {
+      if (error) return reject(error)
+      zip.on("error", reject)
+      zip.on("end", () => reject(new Error("Windows executable not found in archive")))
+      zip.on("entry", (entry) => {
+        if (entry.fileName !== "codebase-memory-mcp.exe") return zip.readEntry()
+        zip.openReadStream(entry, async (error, stream) => {
+          if (error) { zip.close(); return reject(error) }
+          try {
+            const hash = createHash("sha256")
+            for await (const chunk of stream) hash.update(chunk)
+            resolve(hash.digest("hex"))
+          } catch (error) {
+            reject(error)
+          } finally {
+            zip.close()
+          }
+        })
+      })
+      zip.readEntry()
+    })
+  })
+  assert.equal(digest, release.binarySha256)
+})
 
 test("Windows releases are bundled and checksum verified", async () => {
   for (const arch of ["x64", "arm64"]) {
