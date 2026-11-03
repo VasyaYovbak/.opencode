@@ -55,9 +55,8 @@ test("all bundled SHA-256 values have a valid format", () => {
   }
 })
 
-test("Windows x64 executable matches its checksum", { timeout: 180_000 }, async () => {
-  const release = getBundledRelease("win32", "x64")
-  const digest = await new Promise((resolve, reject) => {
+async function windowsBinaryDigest(release) {
+  return new Promise((resolve, reject) => {
     yauzl.open(join(binDir, release.archive), { lazyEntries: true }, (error, zip) => {
       if (error) return reject(error)
       zip.on("error", reject)
@@ -80,12 +79,18 @@ test("Windows x64 executable matches its checksum", { timeout: 180_000 }, async 
       zip.readEntry()
     })
   })
-  assert.equal(digest, release.binarySha256)
-})
+}
 
-test("Windows releases are bundled and checksum verified", async () => {
+test("Windows executables match their checksums", { timeout: 180_000 }, async () => {
   for (const arch of ["x64", "arm64"]) {
     const release = getBundledRelease("win32", arch)
+    assert.equal(await windowsBinaryDigest(release), release.binarySha256)
+  }
+})
+
+test("all releases are bundled and checksum verified", async () => {
+  for (const release of Object.values(bundledReleases)) {
+    assert.match(release.archive, /-v0\.12\.1\.(?:tar\.gz|zip)$/)
     const hash = createHash("sha256")
     for await (const chunk of createReadStream(join(binDir, release.archive))) hash.update(chunk)
     assert.equal(hash.digest("hex"), release.archiveSha256)
@@ -107,8 +112,10 @@ test("extracts and runs the bundled executable", { timeout: 180_000 }, async (t)
   try {
     await copyFile(join(binDir, release.archive), join(directory, release.archive))
     const binary = await ensureBundledBinary(directory)
-    assert.equal((await execFileAsync(binary, ["--version"])).stdout.trim(), "codebase-memory-mcp 0.11.0")
+    assert.equal((await execFileAsync(binary, ["--version"])).stdout.trim(), "codebase-memory-mcp 0.12.1")
     assert.equal(await ensureBundledBinary(directory), binary)
+    const help = await execFileAsync(binary, ["cli", "detect_changes", "--help"])
+    assert.match(help.stdout, /--scope <files\|impact\|tests>/)
     if (process.platform === "win32") {
       const wrapper = join(binDir, "opencode-cbm.cmd")
       const env = { ...process.env, CBM: "opencode-cbm", CBM_BINARY: binary, PATH: `${binDir}${delimiter}${process.env.PATH}` }

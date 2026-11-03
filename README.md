@@ -34,7 +34,7 @@ Alternatively, place or symlink this directory under `~/.config/opencode/plugins
 
 ## CBM settings
 
-Codebase Memory v0.11.0 is bundled for Linux x64, macOS Apple Silicon (arm64), macOS Intel (x64),
+Codebase Memory v0.12.1 is bundled for Linux x64, macOS Apple Silicon (arm64), macOS Intel (x64),
 and Windows x64 and arm64. Windows requires the built-in `tar.exe` (Windows 10 1803 or later).
 The plugin selects the archive using the OpenCode server's OS and architecture, verifies the archive and
 executable SHA-256 checksums, and checks the version before using a platform-specific runtime directory.
@@ -42,8 +42,12 @@ No separate CBM installation or runtime download is needed on these platforms.
 
 Set `CBM_BINARY` in the OpenCode **server environment** to use a different executable or support another
 platform. This override bypasses the bundled checksum and version checks, so verify the executable yourself
-(`codebase-memory-mcp --version` should print `codebase-memory-mcp 0.11.0`).
+(`codebase-memory-mcp --version` should print `codebase-memory-mcp 0.12.1`).
 `CBM_LOG_LEVEL` is forwarded to shell sessions and defaults to `error`.
+
+After upgrading, the first index of each existing project is a one-time full rebuild.
+CBM requires active clients to use the same executable build and cache root; close
+other clients still running an older CBM version if the new runtime reports a conflict.
 
 In shell sessions, `CBM` names the bundled `opencode-cbm` wrapper on `PATH`. Use `$CBM list_projects`
 in either bash or zsh without word-splitting workarounds; paths and arguments containing spaces are preserved.

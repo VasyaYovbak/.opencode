@@ -18,7 +18,7 @@ Use Codebase Memory (`$CBM`) first for symbol discovery, callers/callees, depend
 
 If the backend is unavailable or the scope is not indexed, continue with `Read` and `Glob`, and say so. Do not let an index problem block ordinary work.
 
-## CLI contract (bundled upstream v0.11.0)
+## CLI contract (bundled upstream v0.12.1)
 
 - `$CBM` is on `PATH` in every shell command. Invoke it directly: `$CBM search_graph ...`. Do not add `cli`, run the binary alone, or start another MCP server.
 - Tool names use underscores; flags use kebab-case: `get_code_snippet --qualified-name ...`.
@@ -46,6 +46,7 @@ list_projects
 index_repository --repo-path <absolute-path>
   [--mode full|moderate|fast|cross-repo-intelligence (full)] [--name NAME]
   [--target-projects NAME (repeatable)] [--persistence true|false (false)]
+  [--doc-candidates true|false] [--async true|false] [--status true|false]
   fast: filtered structural index; moderate: filtered + semantic;
   full: all + semantic. persistence=true writes .codebase-memory/graph.db.zst.
 
@@ -62,7 +63,7 @@ check_index_coverage --project <PROJECT>
 
 search_graph --project <PROJECT>
   [--label LABEL] [--name-pattern REGEX] [--qn-pattern REGEX]
-  [--file-pattern REGEX] [--query CYPHER]
+  [--file-pattern REGEX] [--query CYPHER] [--kind KIND] [--namespace NAMESPACE]
   [--relationship TYPE] [--min-degree N] [--max-degree N]
   [--exclude-entry-points true|false] [--include-connected true|false]
   [--limit N (50)] [--offset N (0)] [--max-output-tokens N (3200)]
@@ -92,7 +93,7 @@ get_code_snippet --project <PROJECT> --qualified-name <QN>
 
 trace_path --project <PROJECT> --function-name <exact-name-or-QN>
   [--direction inbound|outbound|both (both)] [--depth N (3)]
-  [--mode calls|data_flow|cross_service (calls)] [--parameter-name NAME]
+  [--mode calls|data_flow|cross_service|topology|deploy|run (calls)] [--parameter-name NAME]
   [--edge-types TYPE (repeatable)] [--include-tests true|false (false)]
   [--risk-labels true|false (false)] [--include-evidence true|false (false)]
   [--limit N (100)] [--cursor CURSOR] [--max-output-tokens N (3200)]
@@ -119,13 +120,15 @@ get_architecture --project <PROJECT>
   Scope by path when possible; request expensive aspects only when needed.
 
 detect_changes --project <PROJECT>
-  [--scope files|impact (impact)] [--direction inbound|outbound|both (inbound)]
-  [--depth N (2)] [--base-branch BRANCH (main)] [--since REF]
+  [--scope files|impact|tests (impact)] [--direction inbound|outbound|both (inbound)]
+  [--depth N (2)] [--base-branch BRANCH] [--since REF]
+  [--edge-types TYPE (repeatable)] [--fixpoint true|false] [--via true|false]
   [--changed-limit N (20)] [--changed-cursor CURSOR] [--changed-offset N (0)]
   [--limit N (200)] [--impact-cursor CURSOR] [--impact-offset N (0)]
   [--module-limit N (20)] [--module-cursor CURSOR] [--module-offset N (0)]
   [--max-output-tokens N (3200)] [--format tree|json]
-  Map Git changes to symbols and affected callers/dependencies.
+  Map Git changes to symbols and affected callers/dependencies or tests.
+  Default base is origin/HEAD, then main, master, or the upstream branch.
   Choose the checkout's actual base branch; do not assume every repository uses main.
   Requires valid Git commits for HEAD and the comparison ref.
 ```
@@ -207,4 +210,4 @@ For cross-service traversal use `trace_path --mode cross_service --direction bot
 
 ## Other tools
 
-The bundled CLI exposes 17 tools: the 13 documented above plus `compare_graphs`, `manage_adr`, `ingest_traces`, and `delete_project`. There is no `explore_search` in upstream v0.11.0. Never delete an index or mutate ADRs or trace data unless the user asked for it.
+The bundled CLI exposes 17 tools: the 13 documented above plus `compare_graphs`, `manage_adr`, `ingest_traces`, and `delete_project`. There is no `explore_search` in upstream v0.12.1. Never delete an index or mutate ADRs or trace data unless the user asked for it.

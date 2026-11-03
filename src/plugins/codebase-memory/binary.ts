@@ -6,7 +6,8 @@ import { join } from "node:path"
 import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
-const expectedVersion = "codebase-memory-mcp 0.11.0"
+const releaseVersion = "0.12.1"
+const expectedVersion = `codebase-memory-mcp ${releaseVersion}`
 const expectedArchiveMembers = [
   "codebase-memory-mcp",
   "LICENSE",
@@ -23,30 +24,30 @@ type BundledRelease = {
 
 export const bundledReleases: Readonly<Partial<Record<string, BundledRelease>>> = {
   "linux-x64": {
-    archive: "codebase-memory-mcp-linux-amd64-portable-v0.11.0.tar.gz",
-    archiveSha256: "1f9e8293eb2bc5c05cfa27a7e8fc033da6d729ffad525ccfcdaa3fd606306683",
-    binarySha256: "ce11c141431aeadd788506c3a7e6942db8fd438dec369d0707a39ec9fd8c6510",
+    archive: "codebase-memory-mcp-linux-amd64-portable-v0.12.1.tar.gz",
+    archiveSha256: "8c3d0341064301e78ecc84cf7348d4e2c6562a0f57448243ea560aaa34de36c1",
+    binarySha256: "77745491f0a9c346d6da23eed4d92b5feaa31a27a883c9faa4fa9f47c8183705",
   },
   "darwin-arm64": {
-    archive: "codebase-memory-mcp-darwin-arm64-v0.11.0.tar.gz",
-    archiveSha256: "4dee7f38b63740e6751d7a7ed7eb10291c1f2a3ea2415f599dc68370ca0a2d18",
-    binarySha256: "a67b7ccead5d2ca852051f8619458ab96af41393257b56fb36e523a110265d48",
+    archive: "codebase-memory-mcp-darwin-arm64-v0.12.1.tar.gz",
+    archiveSha256: "9bfcbe38414b47969a3e1d1c1999f5357409387c86fa3d24221b5458267660d2",
+    binarySha256: "a36cfa1f5d10d8c4762501d63feef082711aae4704b9e8f9066db52779a8601e",
   },
   "darwin-x64": {
-    archive: "codebase-memory-mcp-darwin-amd64-v0.11.0.tar.gz",
-    archiveSha256: "dbf1c73bfcbde64e7dde4cd1320da7afc02e2c972ee1789ae039521411f5132e",
-    binarySha256: "69ca71b4b62fe233677851bdf54953e2a6660cf5d687b4d64226b2591b14ed39",
+    archive: "codebase-memory-mcp-darwin-amd64-v0.12.1.tar.gz",
+    archiveSha256: "ca6e64397a8ae80cec898a8205a6aa16750ac798acc05a0c3ed983837944a581",
+    binarySha256: "f3ba4d7dd462be868eff85f0dccb7375405f58084da800826065df2312b028ab",
   },
   "win32-x64": {
-    archive: "codebase-memory-mcp-windows-amd64-v0.11.0.zip",
-    archiveSha256: "6eb6beaf261b19e419766e78baf93cbc3cf1c6338cff8fb7c0234859f96d1685",
-    binarySha256: "7edcd3807ebcfd85ec1968985964080f2589748da2fc3c7ce9261eebab31ff04",
+    archive: "codebase-memory-mcp-windows-amd64-v0.12.1.zip",
+    archiveSha256: "4e4e0f16b45233af5c757a1fcbe3c3b16e9056375b1fbe2ce020b6de75dedcc0",
+    binarySha256: "39f6a789cd858d7428561ac5afaefb9a47b018dcba0ad6fa41ae71a45e0ed656",
     windows: true,
   },
   "win32-arm64": {
-    archive: "codebase-memory-mcp-windows-arm64-v0.11.0.zip",
-    archiveSha256: "52b29881214fce47d529e098308b1de77c40f6812e20a34d588ee4c25b84fd1a",
-    binarySha256: "5615aa31e3cdbe6155e7096c43d07e62e335fe34d28e489b4cc3ce113e81b4e6",
+    archive: "codebase-memory-mcp-windows-arm64-v0.12.1.zip",
+    archiveSha256: "934ab6bd67a76c6ebd9e110d87b7090ffd629919bedaeddabe5a19175038b063",
+    binarySha256: "b19816bb88ef3145a0f4b81856665c67a684cc038e06ae696e76960277c67b41",
     windows: true,
   },
 }
@@ -55,7 +56,7 @@ export function getBundledRelease(platform: string = process.platform, arch: str
   const release = bundledReleases[`${platform}-${arch}`]
   if (!release) {
     throw new Error(
-      `No bundled Codebase Memory 0.11.0 binary for ${platform}/${arch}. ` +
+      `No bundled Codebase Memory ${releaseVersion} binary for ${platform}/${arch}. ` +
       "Set CBM_BINARY in the OpenCode server environment to a compatible executable.",
     )
   }
@@ -93,7 +94,7 @@ export async function verifyBinaryVersion(path: string): Promise<void> {
 export async function ensureBundledBinary(binDir: string): Promise<string> {
   const release = getBundledRelease()
   const archivePath = join(binDir, release.archive)
-  const runtimeDir = join(binDir, `.runtime-v0.11.0-${process.platform}-${process.arch}`)
+  const runtimeDir = join(binDir, `.runtime-v${releaseVersion}-${process.platform}-${process.arch}`)
   const binaryName = release.windows ? "codebase-memory-mcp.exe" : "codebase-memory-mcp"
   const defaultBinary = join(runtimeDir, binaryName)
   const validRuntime = await verifyBinaryVersion(defaultBinary).then(() => true, () => false)
