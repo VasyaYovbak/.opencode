@@ -33,7 +33,34 @@ function flexModel(
   }
 }
 
+// Experimental: OpenAI has not listed GPT-6.2 as Flex-supported. Prices use Batch rates.
+function gpt62FlexModel(id: string, name: string, cost: Price & { context_over_200k: Price }, pro = false) {
+  return {
+    ...flexModel(id, name, cost, {
+      contextThreshold: 272_000,
+      ...(pro ? { reasoning: { mode: "pro" } } : {}),
+    }),
+    limit: { context: 1_050_000, input: 922_000, output: 128_000 },
+    variants: reasoningVariants.filter((variant) => variant.id !== "none"),
+  }
+}
+
+const gpt62AstraBatchCost = {
+  input: 4, cache_read: 0.2, cache_write: 5, output: 20,
+  context_over_200k: { input: 8, cache_read: 0.4, cache_write: 10, output: 30 },
+}
+
+const gpt62SolBatchCost = {
+  input: 1, cache_read: 0.05, cache_write: 1.25, output: 5,
+  context_over_200k: { input: 2, cache_read: 0.1, cache_write: 2.5, output: 7.5 },
+}
+
 export const flexModels = {
+  "gpt-6.2-astra-flex": gpt62FlexModel("gpt-6.2-astra", "gpt-6.2 astra FLEX", gpt62AstraBatchCost),
+  "gpt-6.2-astra-pro-flex": gpt62FlexModel("gpt-6.2-astra", "gpt-6.2 astra pro FLEX", gpt62AstraBatchCost, true),
+  "gpt-6.2-sol-flex": gpt62FlexModel("gpt-6.2-sol", "gpt-6.2 sol FLEX", gpt62SolBatchCost),
+  "gpt-6.2-sol-pro-flex": gpt62FlexModel("gpt-6.2-sol", "gpt-6.2 sol pro FLEX", gpt62SolBatchCost, true),
+
   "gpt-6-astra-flex": flexModel("gpt-6-astra", "gpt-6 astra FLEX", {
     input: 5,
     cache_read: 0.5,

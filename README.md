@@ -8,6 +8,10 @@ A small OpenCode V2 plugin package bundling three local features:
 
 There is no DashOps provider in this package.
 
+GPT-6.2 Astra and Sol Flex entries (including Pro) are experimental: OpenAI does not yet list these models
+as Flex-supported. Their displayed costs are estimates based on Batch pricing, not confirmed Flex rates.
+Requests may fail or be billed differently; check the returned service tier and actual usage charges.
+
 ## Layout
 
 - `src/index.ts` is the server plugin entry point and composes the server-side feature modules.

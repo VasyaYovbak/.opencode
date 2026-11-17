@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/codebase-memory.test.mjs"
+    "test": "node --test tests/codebase-memory.test.mjs tests/openai-flex-models.test.mjs"
   },
   "dependencies": {
     "@opencode/plugin": "^2.0.26",
