@@ -1,8 +1,9 @@
 /** @jsxImportSource @opentui/solid */
 import type { SessionInfo } from "@opencode/client"
 import { Plugin } from "@opencode/plugin/tui"
+import { jsx } from "@opentui/solid/jsx-runtime"
 import { TokenUsage } from "@opencode/schema/token-usage"
-import { createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js"
+import { createComponent, createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js"
 import type { Accessor } from "solid-js"
 import { createMetrics } from "./state.js"
 
@@ -67,19 +68,25 @@ function SpeedWidget(props: {
     return props.api.theme.text.feedback.success.base
   }
 
+  // Published packages bypass the host's Solid JSX transform. Keep dynamic props as getters.
+  const text = (children: Accessor<string>, fg = () => props.api.theme.text.muted) => jsx("text", {
+    get children() { return children() },
+    get fg() { return fg() },
+  })
+
   return (
     <box flexDirection="column">
       <text fg={props.api.theme.text.base}><b>Model speed · chat</b></text>
-      <text fg={props.api.theme.text.base}>{reading().model ?? "model"}</text>
-      <text fg={props.api.theme.text.muted}>Prompt ≈ {formatSpeed(reading().prompt)} tok/s</text>
+      {text(() => reading().model ?? session()?.model?.id ?? "model", () => props.api.theme.text.base)}
+      {text(() => `Prompt ≈ ${formatSpeed(reading().prompt)} tok/s`)}
       <box flexDirection="row">
         <text fg={props.api.theme.text.muted}>Generation </text>
-        <text fg={color()}>{formatSpeed(reading().generation)}</text>
+        {text(() => formatSpeed(reading().generation), color)}
         <text fg={props.api.theme.text.muted}> tok/s</text>
       </box>
-      <text fg={props.api.theme.text.muted}>TTFT {formatTime(reading().ttftMs)}</text>
+      {text(() => `TTFT ${formatTime(reading().ttftMs)}`)}
       <text fg={props.api.theme.text.base}><b>Tokens used</b></text>
-      <text fg={props.api.theme.text.muted}>{formatUsage(usage())}</text>
+      {text(() => formatUsage(usage()))}
     </box>
   )
 }
@@ -127,7 +134,10 @@ export default Plugin.define({
     }, 250)
     const unslot = api.ui.slot({
       append: "sidebar.content",
-      render: (input) => <SpeedWidget api={api} sessionID={input.sessionID} metrics={metrics} revision={revision} load={load} />,
+      render: (input) => createComponent(SpeedWidget, {
+          api, metrics, revision, load,
+          get sessionID() { return input.sessionID },
+        }),
     })
 
     return () => {
