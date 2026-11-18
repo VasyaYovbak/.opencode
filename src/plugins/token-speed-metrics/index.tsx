@@ -1,7 +1,8 @@
 /** @jsxImportSource @opentui/solid */
+import type { SessionInfo } from "@opencode/client"
 import { Plugin } from "@opencode/plugin/tui"
 import { TokenUsage } from "@opencode/schema/token-usage"
-import { createEffect, createMemo, createSignal } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, onCleanup } from "solid-js"
 import type { Accessor } from "solid-js"
 import { createMetrics } from "./state.js"
 
@@ -28,6 +29,32 @@ function SpeedWidget(props: {
   load: (sessionID: string) => Promise<void>
 }) {
   createEffect(() => { void props.load(props.sessionID) })
+  // baza: refetch until the TUI store reliably replaces optimistic zero totals.
+  const controller = new AbortController()
+  const [session, { refetch }] = createResource<SessionInfo | undefined, string>(() => props.sessionID, async (sessionID, { value }) => {
+    try {
+      return await props.api.client.session.get({ sessionID }, { signal: controller.signal })
+    } catch {
+      return value
+    }
+  })
+  const unlisten = props.api.data.listen(({ details }) => {
+    switch (details.type) {
+      case "session.usage.updated":
+      case "session.execution.succeeded":
+      case "session.execution.failed":
+      case "session.execution.interrupted":
+        if (details.data.sessionID === props.sessionID) void refetch()
+    }
+  })
+  onCleanup(() => {
+    unlisten()
+    controller.abort()
+  })
+  const usage = () => {
+    const info = session()
+    return info?.id === props.sessionID ? info.tokens : undefined
+  }
   const reading = createMemo(() => {
     props.revision()
     return props.metrics.summary(props.sessionID)
@@ -52,7 +79,7 @@ function SpeedWidget(props: {
       </box>
       <text fg={props.api.theme.text.muted}>TTFT {formatTime(reading().ttftMs)}</text>
       <text fg={props.api.theme.text.base}><b>Tokens used</b></text>
-      <text fg={props.api.theme.text.muted}>{formatUsage(props.api.data.session.get(props.sessionID)?.tokens)}</text>
+      <text fg={props.api.theme.text.muted}>{formatUsage(usage())}</text>
     </box>
   )
 }
