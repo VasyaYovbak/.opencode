@@ -1,11 +1,12 @@
 import type { OpenCodeEvent, SessionLogOutput } from "@opencode/client"
-import { addUsage, aggregateSpeeds, estimateTokens, generatedTokens, liveTokensPerSecond, processedPromptTokens, type TokenSample, type TokenUsage } from "./metrics.js"
+import type { TokenUsage } from "@opencode/schema/token-usage"
+import { aggregateSpeeds, estimateTokens, generatedTokens, liveTokensPerSecond, processedPromptTokens, type TokenSample } from "./metrics.js"
 
 type StepTiming = {
   started?: number
   firstOutput?: number
   completed?: number
-  tokens?: Parameters<typeof addUsage>[1]
+  tokens?: TokenUsage.Info
   toolInputs: Map<string, number>
 }
 
@@ -86,7 +87,6 @@ export function createMetrics() {
       }))
       return {
         model: models.get(sessionID),
-        usage: values.reduce<TokenUsage | undefined>((total, step) => step.tokens ? addUsage(total, step.tokens) : total, undefined),
         ...speeds,
         generation: liveTokensPerSecond(samples.get(sessionID) ?? [], now) ?? speeds.generation,
       }

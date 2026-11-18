@@ -8,10 +8,6 @@ export function generatedTokens(outputTokens: number, reasoningTokens: number, t
   return outputTokens + reasoningTokens + toolInputTokens
 }
 
-export function promptTokens(inputTokens: number, cacheReadTokens: number, cacheWriteTokens: number) {
-  return inputTokens + cacheReadTokens + cacheWriteTokens
-}
-
 export function processedPromptTokens(inputTokens: number, cacheWriteTokens: number) {
   return inputTokens + cacheWriteTokens
 }
@@ -42,31 +38,6 @@ export function aggregateSpeeds(turns: SpeedTurn[]) {
     ttftMs: turns.length
       ? turns.reduce((total, turn) => total + turn.ttftMs, 0) / turns.length
       : undefined,
-  }
-}
-
-export type TokenUsage = {
-  input: number
-  cached: number
-  cacheWrite: number
-  output: number
-  reasoning: number
-}
-
-type MessageTokens = {
-  input: number
-  output: number
-  reasoning: number
-  cache: { read: number; write: number }
-}
-
-export function addUsage(total: TokenUsage | undefined, tokens: MessageTokens): TokenUsage {
-  return {
-    input: (total?.input ?? 0) + tokens.input,
-    cached: (total?.cached ?? 0) + tokens.cache.read,
-    cacheWrite: (total?.cacheWrite ?? 0) + tokens.cache.write,
-    output: (total?.output ?? 0) + tokens.output,
-    reasoning: (total?.reasoning ?? 0) + tokens.reasoning,
   }
 }
 

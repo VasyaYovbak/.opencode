@@ -1,20 +1,20 @@
 /** @jsxImportSource @opentui/solid */
 import { Plugin } from "@opencode/plugin/tui"
+import { TokenUsage } from "@opencode/schema/token-usage"
 import { createEffect, createMemo, createSignal } from "solid-js"
 import type { Accessor } from "solid-js"
-import { generatedTokens, promptTokens, type TokenUsage } from "./metrics.js"
 import { createMetrics } from "./state.js"
 
 const formatSpeed = (value?: number) => value === undefined ? "--" : value >= 100 ? value.toFixed(0) : value.toFixed(1)
 const formatTime = (value?: number) => value === undefined ? "--" : `${(value / 1_000).toFixed(1)}s`
 const formatTokens = (value?: number) => value === undefined ? "--" : new Intl.NumberFormat("en-US").format(value)
 
-function formatUsage(usage?: TokenUsage) {
+function formatUsage(usage?: TokenUsage.Info) {
   return [
-    `Total ${formatTokens(usage ? promptTokens(usage.input, usage.cached, usage.cacheWrite) + generatedTokens(usage.output, usage.reasoning) : undefined)}`,
-    `Input ${formatTokens(usage?.input)}`,
-    `Cached ${formatTokens(usage?.cached)}`,
-    `Cache write ${formatTokens(usage?.cacheWrite)}`,
+    `Total ${formatTokens(usage && TokenUsage.total(usage))}`,
+    `Input (uncached) ${formatTokens(usage?.input)}`,
+    `Cache read ${formatTokens(usage?.cache.read)}`,
+    `Cache write ${formatTokens(usage?.cache.write)}`,
     `Output ${formatTokens(usage?.output)}`,
     `Reasoning ${formatTokens(usage?.reasoning)}`,
   ].join("\n")
@@ -52,7 +52,7 @@ function SpeedWidget(props: {
       </box>
       <text fg={props.api.theme.text.muted}>TTFT {formatTime(reading().ttftMs)}</text>
       <text fg={props.api.theme.text.base}><b>Tokens used</b></text>
-      <text fg={props.api.theme.text.muted}>{formatUsage(reading().usage)}</text>
+      <text fg={props.api.theme.text.muted}>{formatUsage(props.api.data.session.get(props.sessionID)?.tokens)}</text>
     </box>
   )
 }
@@ -77,7 +77,7 @@ export default Plugin.define({
       } catch {
         if (!controller.signal.aborted) api.ui.toast.show({
           title: "Token metrics",
-          message: "Could not load historical metrics. Live metrics are still available; reopen the session to retry.",
+          message: "Could not load historical speed metrics. Live metrics are still available; reopen the session to retry.",
           variant: "warning",
         })
       } finally {
